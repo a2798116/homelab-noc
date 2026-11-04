@@ -615,6 +615,7 @@ body {
 #topo .flow.lan { stroke: var(--ok); }
 #topo .flow.hairpin { stroke: var(--warn); stroke-dasharray: 4 18; }
 #topo .flow.tunnel { stroke: var(--vpn); stroke-dasharray: 3 19; }
+#topo .flow.bypass { stroke: var(--violet); stroke-dasharray: 3 21; }
 @keyframes flowrun { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 #topo .flow { animation: flowrun linear infinite; }
 

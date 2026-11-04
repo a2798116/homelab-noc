@@ -109,6 +109,15 @@
     return n + u[i] + '/s';
   }
 
+  /* 更短的写法：给交换机端口条下面的标注用，10 口并排也不挤 */
+  function fmtRateMini(bps) {
+    if (!bps || bps < 1) return '0';
+    const u = ['', 'K', 'M', 'G'];
+    let i = 0, v = bps;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + u[i];
+  }
+
   function fmtBytes(b) {
     if (!b) return '0 B';
     const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -180,10 +189,11 @@
     ap4:    { x: 492, y: 432, w: 132, title: 'AP 4',        sub: '',            probe: 'ap4' },
     pve:    { x: 786, y: 176, w: 232, title: 'PVE 宿主机',   sub: '',            probe: 'pve' },
     vm1:    { x: 792, y: 286, w: 208, title: 'VM',          sub: '',            probe: 'syno' },
-    vm2:    { x: 792, y: 344, w: 208, title: 'VM',          sub: '',            probe: 'nas' },
-    vm3:    { x: 792, y: 402, w: 208, title: 'VM',          sub: '',            probe: 'openwrt' },
-    vm4:    { x: 792, y: 460, w: 208, title: 'VM',          sub: '',            probe: 'openwrt2' },
-    vm5:    { x: 792, y: 518, w: 208, title: 'VM',          sub: '',            probe: 'ha' },
+    vm3:    { x: 792, y: 344, w: 208, title: 'VM',          sub: '',            probe: 'openwrt' },
+    vm4:    { x: 792, y: 402, w: 208, title: 'VM',          sub: '',            probe: 'openwrt2' },
+    vm5:    { x: 792, y: 460, w: 208, title: 'VM',          sub: '',            probe: 'ha' },
+    // 飞牛 NAS 走 GE4 直通（PCIe 网卡直通给 PVE，绕过虚拟交换机），不挂在 PVE 业务口 spine 上
+    vm2:    { x: 792, y: 518, w: 208, title: 'VM',          sub: '',            probe: 'nas' },
     // VPN 三个分支站点不占机位，直接排在右上角：一块一块的小卡，各自带隧道线
   };
   // 站点卡坐标：x 左边界 / 宽 / 高 / 三行的中心 y（和右侧 PVE 顶部留 12px 间隙）
@@ -304,12 +314,15 @@
         d: `M612,${VPN_TILE.ys[0]} L612,${VPN_TILE.ys[2]} Q612,130 600,130 L398,130 Q386,130 386,142 L386,${nIK.y - NH / 2}` },
       ...busPaths,
       ...apDrops,
-      // PVE → 五台虚拟机：左侧一条竖脊 + 每台一段短横
-      ...VM_KEYS.map((k) => {
+      // PVE 业务口（GE7 trunk）→ spine → 四台 VM（群晖 / OpenWrt×2 / HA）
+      ...VM_KEYS.filter((k) => k !== 'vm2').map((k) => {
         const vm = NODES[k];
         return { id: 'lk-' + k, cls: 'bypass', arrow: false,
           d: `M${nPVE.x},${nPVE.y + NH / 2} L${nPVE.x},${nPVE.y + NH / 2 + 16} L660,${nPVE.y + NH / 2 + 16} L660,${vm.y} L${vm.x - vm.w / 2},${vm.y}` };
       }),
+      // 飞牛 NAS：GE4 直通，独立线路（绕开 PVE 虚拟交换机），路由避开 AP 汇聚区域
+      { id: 'lk-fnos', cls: 'lan',
+        d: `M${portXY('switch', 3).x},${nSW.y + NH / 2} L${portXY('switch', 3).x},${nSW.y + NH / 2 + 33} L580,${nSW.y + NH / 2 + 33} L580,${NODES.vm2.y} L${NODES.vm2.x - NODES.vm2.w / 2},${NODES.vm2.y}` },
     ];
 
     for (const p of paths) {
@@ -320,7 +333,7 @@
       if (p.cls === 'bypass') base.setAttribute('marker-end', 'url(#tw-arrow)');
       links.appendChild(base);
 
-      if (p.cls !== 'bypass' && p.flow !== false) {
+      if (p.flow !== false) {
         const flow = document.createElementNS(SVG_NS, 'path');
         flow.setAttribute('class', 'flow ' + p.cls);
         flow.setAttribute('d', p.d);
@@ -334,6 +347,8 @@
     const labels = [
       { x: nIK.x + 14, y: 240, t: 'trunk · VLAN100/200', cls: 'tag', anchor: 'start' },
       { x: 14, y: 340, t: 'VLAN100 无线 · PoE', cls: 'tag', anchor: 'start' },
+      { x: 470, y: 226, t: 'GE7 · PVE 业务', cls: 'tag', anchor: 'start' },
+      { x: 440, y: 350, t: 'GE4 · 飞牛直通', cls: 'tag', anchor: 'start' },
     ];
     for (const l of labels) {
       const t = document.createElementNS(SVG_NS, 'text');
@@ -390,6 +405,10 @@
           port.setAttribute('id', 'pt-' + (i + 1));
           port.setAttribute('class', 'portbox');
           g.appendChild(port);
+          // 端口实时速率标注：画在端口条正下方，updateTopo 按实测填充
+          const rate = mkText(cx, n.y + NH / 2 + 9, 'port-rate', 'middle', '');
+          rate.setAttribute('id', 'ptr-' + (i + 1));
+          g.appendChild(rate);
         }
       }
 
@@ -435,6 +454,11 @@
     const rateLan = mkText(NODES.ikuai.x + NODES.ikuai.w / 2 + 8, NODES.ikuai.y + 4, 'node-rate', 'start', '');
     rateLan.setAttribute('id', 'rt-lan');
     links.appendChild(rateLan);
+
+    // PVE 业务口（GE7）实时速率：标在交换机→PVE 弧线下方留白处
+    const ratePve = mkText(560, 252, 'node-rate', 'middle', '');
+    ratePve.setAttribute('id', 'rt-pve');
+    links.appendChild(ratePve);
 
     // 每台 AP 下方显示它的无线终端实时吞吐合计
     for (const key of ['ap1', 'ap2', 'ap3', 'ap4']) {
@@ -519,6 +543,14 @@
 
     // GE7 是 PVE 业务 trunk，交换机→PVE 那根弧线的流速就取它
     setFlow('lk-pve', sum(pt[7]));
+    const rtPve = $('rt-pve');
+    if (rtPve) {
+      const p7 = pt[7];
+      rtPve.textContent = (p7 && p7.up) ? '↓' + fmtRateMini(p7.rx || 0) + ' ↑' + fmtRateMini(p7.tx || 0) : '';
+    }
+
+    // GE4 是飞牛直通，独立线路，流速与速率标注都取它
+    setFlow('lk-fnos', sum(pt[4]));
 
     // AP 汇聚交换的牌子跟着 GE8 亮灭
     const apSwG = $('nd-apsw');
@@ -545,7 +577,7 @@
       if (box) box.setAttribute('class', 'portbox' + (p && p.up ? ' up' : ''));
       if (txt) {
         const total = sum(p);
-        txt.textContent = (!p || !p.up || total < 1024) ? '' : fmtRate(total);
+        txt.textContent = (!p || !p.up || total < 2048) ? '' : fmtRateMini(total);
       }
     }
 
@@ -575,7 +607,8 @@
     const rtLan = $('rt-lan');
     if (rtLan) rtLan.textContent = '↓ ' + fmtRate(lan.down) + '   ↑ ' + fmtRate(lan.up);
 
-    // 虚拟机小字：CPU 占用 + 已用内存（来自 PVE /cluster/resources）
+    // 虚拟机：链路流速 + 右侧小字。CPU/内存详情在算力页，拓扑这里给网络吞吐。
+    // 飞牛（vm2）走 GE4 直通，速率取交换机端口实测；其余 VM 取 PVE guest 的 netin/netout（已折算 B/s）。
     const guests = {};
     ((snap.pve || {}).guests || []).forEach((g) => { guests[g.vmid] = g; });
     const VM_ID = { vm1: 204, vm2: 203, vm3: 100, vm4: 200, vm5: 202 };
@@ -587,13 +620,22 @@
       const rt = $('rt-' + key);
       if (!rt) continue;
       if (!g) { rt.textContent = '—'; continue; }
-      const mem = g.mem ? (g.mem / 1073741824).toFixed(1) : '0';
-      const maxmem = g.maxmem ? Math.round(g.maxmem / 1073741824) : 0;
-      // 采集器里 cpu 已经是百分比（PVE 的 0~1 已在后端 ×100）
-      rt.textContent = g.status === 'running'
-        ? (g.cpu || 0).toFixed(1) + '% · ' + mem + '/' + maxmem + 'G'
-        : '已停止';
-      rt.setAttribute('class', g.status === 'running' ? 'node-rate' : 'node-rate bad');
+      if (g.status !== 'running') {
+        rt.textContent = '已停止';
+        rt.setAttribute('class', 'node-rate bad');
+        continue;
+      }
+      let rate;
+      if (key === 'vm2') {
+        // 飞牛直通：速率就是 GE4 的收发
+        const p4 = pt[4];
+        rate = (p4 && p4.up) ? '↓' + fmtRateMini(p4.rx || 0) + ' ↑' + fmtRateMini(p4.tx || 0) : '';
+      } else {
+        rate = '↓' + fmtRateMini(g.netin || 0) + ' ↑' + fmtRateMini(g.netout || 0);
+        setFlow('lk-' + key, (g.netin || 0) + (g.netout || 0));
+      }
+      rt.textContent = rate || '空闲';
+      rt.setAttribute('class', 'node-rate' + ((g.netin + g.netout) > 51200 || (key === 'vm2' && sum(pt[4]) > 51200) ? ' hot' : ''));
     }
   }
 
