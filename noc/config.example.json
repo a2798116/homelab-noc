@@ -9,61 +9,259 @@
     "   laptop phone camera bulb sensor speaker fridge washer ac fryer fish device",
     "   tv tablet watch plug。cat 可选：infra net media smart client。",
     "5. switch.ports 的 node 必须是前端拓扑节点 key：apsub / apmain / pve / ikuai，",
-    "   null 表示该口空置或不对应拓扑节点。"
+    "   null 表示该口空置或不对应拓扑节点。",
+    "6. ha.env_rooms 决定「室内」读数取自哪几个实体：一个房间一段，entities 里按",
+    "   temp / hum / pm25 / hcho / pm1 / pm10 命名，不写就只显示有的那几项。",
+    "   不要让它按 device_class 自动猜 —— 群晖每块盘、冰箱、空调都会冒充「室内」。",
+    "7. ha.outdoor_fallback 是天气实体整块 unavailable 时的备用温度源，按顺序取第一个有数的。",
+    "8. vpn.clients 的键是隧道地址（10.8.8.X），拨入站点的名字和站点内网只有本地配置知道。",
+    "9. ha.lamp_switch_prefix 是灯控面板的 switch 实体前缀（各家设备不同）。不配就只按",
+    "   实体名 _on_p_x_y 规则匹配 —— 会把「机柜插座」「空调喜好模式」也当成灯，建议按实际填。"
   ],
-
   "site": {
     "name": "Homelab NOC",
     "subnet": "192.168.X.0/24",
     "nas_ip": "192.168.X.30"
   },
-
   "switch": {
     "ports": {
-      "1": { "role": "子 AP", "node": "apsub" },
-      "2": { "role": "主 AP", "node": "apmain" },
-      "3": { "role": "空置", "node": null },
-      "4": { "role": "PVE 回程", "node": "pve" },
-      "5": { "role": "路由主干", "node": "ikuai" },
-      "6": { "role": "SFP 光口", "node": null }
+      "1": {
+        "role": "子 AP",
+        "node": "apsub"
+      },
+      "2": {
+        "role": "主 AP",
+        "node": "apmain"
+      },
+      "3": {
+        "role": "空置",
+        "node": null
+      },
+      "4": {
+        "role": "PVE 回程",
+        "node": "pve"
+      },
+      "5": {
+        "role": "路由主干",
+        "node": "ikuai"
+      },
+      "6": {
+        "role": "SFP 光口",
+        "node": null
+      }
     }
   },
-
   "wifi": {
     "hosts": [
-      { "host": "192.168.X.8", "label": "客厅主 AP", "model": "BE6500 Pro", "node": "apmain" },
-      { "host": "192.168.X.5", "label": "书房子 AP", "model": "BE3600 Pro", "node": "apsub" }
+      {
+        "host": "192.168.X.8",
+        "label": "客厅主 AP",
+        "model": "BE6500 Pro",
+        "node": "apmain"
+      },
+      {
+        "host": "192.168.X.5",
+        "label": "书房子 AP",
+        "model": "BE3600 Pro",
+        "node": "apsub"
+      }
     ]
   },
-
   "probes": [
-    { "key": "ikuai", "name": "iKuai", "ip": "192.168.X.1", "port": 443 },
-    { "key": "pve", "name": "PVE", "ip": "192.168.X.10", "port": 8006 },
-    { "key": "nas", "name": "NAS", "ip": "192.168.X.30", "port": 445 },
-    { "key": "apmain", "name": "主 AP", "ip": "192.168.X.8", "port": 80 },
-    { "key": "apsub", "name": "子 AP", "ip": "192.168.X.5", "port": 80 },
-    { "key": "haos", "name": "HAOS", "ip": "192.168.X.20", "port": 8123 },
-    { "key": "switch", "name": "交换机", "ip": "192.168.X.3", "port": 80 },
-    { "key": "inet", "name": "公网", "ip": "223.5.5.5", "port": 53 }
+    {
+      "key": "ikuai",
+      "name": "iKuai",
+      "ip": "192.168.X.1",
+      "port": 443
+    },
+    {
+      "key": "pve",
+      "name": "PVE",
+      "ip": "192.168.X.10",
+      "port": 8006
+    },
+    {
+      "key": "nas",
+      "name": "NAS",
+      "ip": "192.168.X.30",
+      "port": 445
+    },
+    {
+      "key": "apmain",
+      "name": "主 AP",
+      "ip": "192.168.X.8",
+      "port": 80
+    },
+    {
+      "key": "apsub",
+      "name": "子 AP",
+      "ip": "192.168.X.5",
+      "port": 80
+    },
+    {
+      "key": "haos",
+      "name": "HAOS",
+      "ip": "192.168.X.20",
+      "port": 8123
+    },
+    {
+      "key": "switch",
+      "name": "交换机",
+      "ip": "192.168.X.3",
+      "port": 80
+    },
+    {
+      "key": "inet",
+      "name": "公网",
+      "ip": "223.5.5.5",
+      "port": 53
+    }
   ],
-
   "devices": {
-    "192.168.X.1": { "name": "主路由", "zone": "弱电箱", "icon": "router", "cat": "net", "hw": "vmid 100", "note": "硬件直通" },
-    "192.168.X.3": { "name": "2.5G 交换机", "zone": "弱电箱", "icon": "switch", "cat": "net", "hw": "5 口 PoE", "note": "" },
-    "192.168.X.10": { "name": "PVE 宿主机", "zone": "弱电箱", "icon": "server", "cat": "infra", "hw": "N100", "note": "vmbr0 管理口" },
-    "192.168.X.20": { "name": "HAOS", "zone": "PVE", "icon": "vm", "cat": "infra", "hw": "vmid 101", "note": "Home Assistant" },
-    "192.168.X.30": { "name": "NAS", "zone": "客厅", "icon": "nas", "cat": "infra", "hw": "双 2.5G bond", "note": "主力存储" },
-    "192.168.X.50": { "name": "笔记本", "zone": "书房", "icon": "laptop", "cat": "client", "hw": "Windows", "note": "" }
+    "192.168.X.1": {
+      "name": "主路由",
+      "zone": "弱电箱",
+      "icon": "router",
+      "cat": "net",
+      "hw": "vmid 100",
+      "note": "硬件直通"
+    },
+    "192.168.X.3": {
+      "name": "2.5G 交换机",
+      "zone": "弱电箱",
+      "icon": "switch",
+      "cat": "net",
+      "hw": "5 口 PoE",
+      "note": ""
+    },
+    "192.168.X.10": {
+      "name": "PVE 宿主机",
+      "zone": "弱电箱",
+      "icon": "server",
+      "cat": "infra",
+      "hw": "N100",
+      "note": "vmbr0 管理口"
+    },
+    "192.168.X.20": {
+      "name": "HAOS",
+      "zone": "PVE",
+      "icon": "vm",
+      "cat": "infra",
+      "hw": "vmid 101",
+      "note": "Home Assistant"
+    },
+    "192.168.X.30": {
+      "name": "NAS",
+      "zone": "客厅",
+      "icon": "nas",
+      "cat": "infra",
+      "hw": "双 2.5G bond",
+      "note": "主力存储"
+    },
+    "192.168.X.50": {
+      "name": "笔记本",
+      "zone": "书房",
+      "icon": "laptop",
+      "cat": "client",
+      "hw": "Windows",
+      "note": ""
+    }
   },
-
+  "ha": {
+    "outdoor_entity": "weather.forecast_home",
+    "outdoor_fallback": [
+      {
+        "entity": "sensor.air_conditioner_outdoor_temp",
+        "src": "空调外机环境温度",
+        "short": "空调外机"
+      }
+    ],
+    "lamp_switch_prefix": [
+      "switch.your_panel_",
+      "switch.xiaomi_cn_XXXXXXXX_on_p_"
+    ],
+    "env_rooms": [
+      {
+        "name": "客厅",
+        "src": "ZM1 · MQTT",
+        "entities": {
+          "temp": "sensor.zm1_XXXXXXXX_temperature",
+          "hum": "sensor.zm1_XXXXXXXX_humidity",
+          "pm25": "sensor.zm1_XXXXXXXX_pm25",
+          "hcho": "sensor.zm1_XXXXXXXX_hcho"
+        }
+      },
+      {
+        "name": "书房",
+        "src": "Broadlink A2",
+        "entities": {
+          "temp": "sensor.air_quality_temperature",
+          "hum": "sensor.air_quality_humidity",
+          "pm1": "sensor.air_quality_pm1",
+          "pm25": "sensor.air_quality_pm2_5",
+          "pm10": "sensor.air_quality_pm10"
+        }
+      }
+    ]
+  },
+  "vpn": {
+    "_readme": "拨入站点：键是隧道地址，name/short 用于界面，lan/gw/dev 用于「一站一拓扑」",
+    "ignore": [
+      "unused_pptp_account"
+    ],
+    "clients": {
+      "10.8.8.X": {
+        "name": "某办公室",
+        "short": "办公室",
+        "user": "ovpn 账号名",
+        "router": "拨号路由器型号",
+        "lan": "192.168.50.0/24",
+        "gw": "192.168.50.1",
+        "dev": [
+          {
+            "name": "办公电脑",
+            "ip": "192.168.50.2"
+          },
+          {
+            "name": "NAS",
+            "ip": "192.168.50.4"
+          }
+        ]
+      }
+    }
+  },
   "topology": {
-    "ont": { "title": "光猫", "sub": "桥接 · 2 路出口" },
-    "iptv": { "title": "IPTV 机顶盒", "sub": "独立链路" },
-    "ikuai": { "title": "iKuai 主路由", "sub": "X.1 · 硬件直通" },
-    "switch": { "title": "2.5G PoE 交换机", "sub": "X.3 · 2.5G × 5" },
-    "apsub": { "title": "子 AP", "sub": "X.5 · 书房" },
-    "apmain": { "title": "主 AP", "sub": "X.8 · 客厅" },
-    "pve": { "title": "PVE 宿主机", "sub": "X.10 · vmbr0" },
-    "nas": { "title": "NAS", "sub": "X.30 · 双 2.5G" }
+    "ont": {
+      "title": "光猫",
+      "sub": "桥接 · 2 路出口"
+    },
+    "iptv": {
+      "title": "IPTV 机顶盒",
+      "sub": "独立链路"
+    },
+    "ikuai": {
+      "title": "iKuai 主路由",
+      "sub": "X.1 · 硬件直通"
+    },
+    "switch": {
+      "title": "2.5G PoE 交换机",
+      "sub": "X.3 · 2.5G × 5"
+    },
+    "apsub": {
+      "title": "子 AP",
+      "sub": "X.5 · 书房"
+    },
+    "apmain": {
+      "title": "主 AP",
+      "sub": "X.8 · 客厅"
+    },
+    "pve": {
+      "title": "PVE 宿主机",
+      "sub": "X.10 · vmbr0"
+    },
+    "nas": {
+      "title": "NAS",
+      "sub": "X.30 · 双 2.5G"
+    }
   }
 }
