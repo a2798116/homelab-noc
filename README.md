@@ -10,10 +10,11 @@
 
 ```
 .
-├── noc/                        新版「全屋状态大屏」（主项目）
+├── noc/                        「全屋状态大屏」（主项目）
 │   ├── app/
-│   │   ├── server.py           HTTP 服务 + SSE 推送 + 采集调度
-│   │   ├── state.py            快照聚合 / 历史环形缓冲 / 事件流 / 健康分
+│   │   ├── server.py           HTTP 服务 + SSE 推送 + 采集调度 + 历史查询接口
+│   │   ├── state.py            快照聚合 / 事件流 / 健康分 / 指标采样
+│   │   ├── store.py            SQLite 持久化（事件 + 指标，默认留 90 天）
 │   │   ├── config.py           配置加载（环境变量 + config.local.json）
 │   │   ├── assets.py           静态资产表（从本地配置读取）
 │   │   ├── collectors/         七路采集器
@@ -21,13 +22,14 @@
 │   │   │   ├── pve.py          Proxmox VE API
 │   │   │   ├── switch.py       TP-Link 系网页管理的 PoE 交换机
 │   │   │   ├── miwifi.py       小米路由器（AP 模式）
-│   │   │   ├── ha.py           Home Assistant 实体
+│   │   │   ├── ha.py           Home Assistant 实体（环境 / 灯光 / 空调）
 │   │   │   ├── localnet.py     本机内核读数（/proc）
 │   │   │   └── pinger.py       TCP RTT 探测
 │   │   └── static/             单页前端（index.html / style.css / app.js）
 │   ├── agent/
 │   │   ├── nas_net_agent.py    NAS 侧采集端（补二层流量盲区）
 │   │   └── compose-create.example.json
+│   ├── data/                   运行数据（SQLite、HA 令牌落盘，已 gitignore）
 │   ├── config.example.json     站点配置模板（复制为 config.local.json）
 │   ├── .env.example            凭据模板
 │   ├── Dockerfile
@@ -53,16 +55,20 @@
 
 | 模块 | 内容 |
 |---|---|
+| **四页签分层** | 总览 / 网络 / 算力 / 终端，一屏只放一类信息，底部统计条常驻；支持直链 `#network` 与键盘 `1`–`4` |
 | **健康分** | 0–100 综合评分，异常项可点开看清单；红/琥珀/绿三档 |
 | **物理拓扑** | 光猫 → 主路由 → 交换机 → AP / PVE / NAS，**链路流光速度 = 该端口实测流量** |
+| **拨入站点** | VPN 拨入的三个站点直接画在主拓扑上，点开是「一站一拓扑」：隧道 IP、拨号路由器、站点内网网段与网段里的设备 |
 | **端口级流量** | 交换机每个口的 link 速率、实时收发、PoE 功率；本机降噪后不会误报断链 |
-| **无线覆盖** | 每台 AP 的 SSID、**真实信道**、在线数、客户端 MAC 归属到哪个 AP |
-| **终端墙** | 全屋终端按分类铺开，点击看 IP / MAC / 厂商 / 接入 AP / 累计流量 |
-| **算力水位** | PVE 宿主机 CPU/内存/rootfs、每台 VM/LXC 明细与网络差分 |
-| **环境与智能家居** | 室内外温湿度、29 盏灯的开关与亮度（按房间分组）、窗帘、人体存在、空调 |
-| **事件流** | 上下线、链路翻转、灯光开关，都带时间去抖与重复抑制 |
+| **无线覆盖** | 每台 AP 的 SSID、**真实信道**、在线数、客户端 MAC 归属到哪个 AP，每台只展开 2 台终端避免刷屏 |
+| **终端墙** | 一格一张卡：名称 + 完整 IP + 接入方式（AP 名 / PPP 拨入 / 有线）+ 实时速率；点击看 MAC / 厂商 / 累计流量 |
+| **算力（PVE）** | 宿主机 CPU/内存/rootfs、每台 VM/LXC 明细与网络差分、CPU 与内存趋势 |
+| **算力（iKuai）** | 主路由 CPU/内存、每核占用、会话数、在线终端、内网网段实时收发、双 WAN 线路状态与速率 |
+| **环境与智能家居** | 室内按**房间点名实体**（温度/湿度/PM2.5/甲醛/PM10，按国标上色）、室外天气（含三级兜底）、灯光按房间分组、窗帘、人体存在、空调 |
+| **事件流** | 上下线、链路翻转、灯光开关，都带时间去抖与重复抑制，**落库后可回溯** |
+| **历史回溯** | 事件与指标存 SQLite，支持 24h / 7d / 30d，按级别、关键字筛选，画带宽与负载趋势 |
 | **二层流量** | NAS 侧采集端上报的网卡总吞吐，扣掉网关侧外网流量 = 内网直连流量 |
-| **明暗主题** | 跟随系统 / 手动切换，选择记在 localStorage，首屏不闪白 |
+| **明暗主题** | 蓝白为主视觉，深色主题保留；跟随系统 / 手动切换，选择记在 localStorage，首屏不闪白 |
 
 ### 旧版看板（`monitor/`）
 
@@ -122,6 +128,9 @@ MIWIFI_USER=admin
 MIWIFI_PASS=你的AP密码
 
 HA_URL=http://192.168.X.20:8123
+# 推荐：长期访问令牌（HA 网页 → 头像 → 安全 → 长期访问令牌）
+HA_TOKEN=你的HA长期令牌
+# 不用令牌时才填账号密码
 HA_USER=你的HA账号
 HA_PASS=你的HA密码
 
@@ -138,6 +147,20 @@ NAS_IP=192.168.X.30
 - `wifi.hosts`：每台 AP 的地址
 - `probes`：要测延迟的节点
 - `topology`：拓扑节点上显示的文字（可以写自己的 IP 末位）
+- `ha.env_rooms`：**室内环境按房间点名实体**，一个房间一段
+  ```json
+  { "name": "客厅", "src": "ZM1 · MQTT",
+    "entities": { "temp": "sensor.xxx_temperature", "hum": "sensor.xxx_humidity",
+                  "pm25": "sensor.xxx_pm25", "hcho": "sensor.xxx_hcho" } }
+  ```
+  为什么必须点名：HA 里叫「温度」的实体有几十个，群晖每块盘、冰箱、浴霸、空调自检都会冒充室温，
+  一旦按 `device_class` 自动挑，顶栏就会显示 68°C 这种数字。
+- `ha.outdoor_entity` / `ha.outdoor_fallback`：室外天气实体（如 `weather.forecast_home`）与它整块
+  `unavailable` 时的备用温度源，按顺序取第一个有数的
+- `ha.lamp_switch_prefix`：灯控面板的 switch 实体前缀。不配就只按实体名 `_on_p_x_y` 规则匹配，
+  会把「机柜插座」「空调喜好模式」也算成灯，建议按自己的面板填
+- `vpn.clients`：拨入站点名录，键是隧道地址，写 `name/short/user/router/lan/gw/dev` 后才有「一站一拓扑」
+- `wan`：双 WAN 的运营商名称与线路标签（`acct` 宽带账号可留空）
 
 **任何一项没配都不会崩**：缺 `config.local.json` 时终端墙为空、拓扑用通用标签；缺 `.env` 里某个地址时对应采集器会显示"未配置"而不是去连一个瞎猜的地址。
 
@@ -183,6 +206,24 @@ python scripts/deploy_noc.py
 
 ---
 
+## 数据持久化与历史回溯
+
+事件与指标都落在 SQLite（容器内 `/data/noc.db`，对应宿主 `noc/data/`，WAL 模式，默认保留 90 天）。
+不想要历史了直接删掉 `data/noc.db`，下次启动会重建空表，只是曲线要从头攒。
+
+| 接口 | 用途 |
+|---|---|
+| `GET /api/events` | 最近事件（内存环形缓冲，最快） |
+| `GET /api/events/history?hours=24&level=warn&q=关键词` | 按时间窗 / 级别 / 关键字查历史事件 |
+| `GET /api/events/days` | 哪些天有数据，用于时间轴 |
+| `GET /api/metrics?hours=24&step=900` | 指标采样（在线数 / CPU / 内存 / 上下行），按 step 降采样后画趋势 |
+| `GET /api/store` | 库的体积、行数、保留天数 |
+
+界面里事件流右上角的「历史 ›」和底部的时间范围就是查这些接口；PVE 与 iKuai 卡片里的趋势图
+也复用 `/api/metrics`，不额外打请求。
+
+---
+
 ## 运维脚本
 
 所有脚本的连接参数都从根目录 `.env` 读，缺项会直接告诉你缺哪个变量，不会静默失败。
@@ -225,10 +266,12 @@ node tests/render_test.js <快照.json> noc/app/static/app.js
 
 | 类别 | 处理方式 |
 |---|---|
-| 密码 / 令牌 | 只存在于 `.env`（gitignore），仓库里只有 `*.example` 模板 |
-| 内网地址 / 设备清单 | 只存在于 `config.local.json`（gitignore），模板里是 `192.168.X.X` |
+| 密码 / 令牌 | 只存在于 `.env`（gitignore），仓库里只有 `.env.example` 模板；代码里凭据的默认值一律为空串 |
+| 内网地址 / 设备清单 / 运营商账号 | 只存在于 `config.local.json`（gitignore），模板里是 `192.168.X.X` / `YOUR_ISP_ACCOUNT_HERE` |
+| HA 实体与设备编号 | `ha.env_rooms`、`ha.lamp_switch_prefix` 走本地配置，代码里不写实体 ID（否则设备编号会随代码公开） |
 | WireGuard 私钥 | 整个 `wireguard/` 目录 gitignore |
-| 运行数据 | `data/`、`*.db`、`*.log` gitignore |
+| 运行数据 | `data/`、`*.db`、`*.log`、`shots/` gitignore |
+| 编辑器备份与历史重写残留 | `*.bak`、`*.orig`、`*.rej`、`.git-rewrite/` gitignore |
 | 前端 | 拓扑文字由后端下发（`site.topology`），代码里没有 IP |
 
 提交前建议自查一遍：
@@ -236,25 +279,33 @@ node tests/render_test.js <快照.json> noc/app/static/app.js
 ```bash
 git status --short          # 有没有意外的新文件
 git diff --cached --stat    # 暂存区都改了什么
-git grep -nE "192\.168\.[0-9]+\.|password\s*=\s*['\"][^'\"]" -- .  # 兜底扫一遍
+git diff --cached | grep -nE "192\.168\.[0-9]+\.|10\.[0-9]+\.[0-9]+\.|(password|passwd|token|secret)\s*[:=]\s*['\"][^'\"]{6,}"
 ```
+
+这条 `grep` 命中即停手：真实地址与凭据只该出现在被忽略的文件里。
 
 ---
 
 ## 后续更新流程
 
 1. 改代码 → 本地跑 `tests/` 三个 Python 套件，确保没回归
-2. `python scripts/deploy_noc.py` 部署到实际设备，打开面板确认数据正常
+2. 前端改完刷新浏览器即可；后端改动 `docker compose restart`
 3. `git add -p` 逐块看改动，**确认没有 `.env`、没有真实 IP** 再 `git commit`
-4. 推送前 `git status` 复核一次
+4. 推之前 `git status --short` + 上面那条 `grep` 复核一次
 
-提交信息建议用 `模块: 做了什么` 的形式，例如：
+分支习惯：日常改动开 `feat/xxx`、`fix/xxx` 分支，跑通再合进 `main`，出问题可以直接丢掉整条分支。
+
+提交信息用 `类型: 做了什么`（Conventional Commits），正文写清楚**为什么改**：
 
 ```
-noc/采集: 交换机 spd_act 读数抖动时用流量交叉校验
-monitor: 补来源分流，公网只放行上报接口
-docs: 脱敏 README，补配置模板
+feat(ui): 四页签分层 + 蓝白皮肤 + 算力页并入 iKuai + 终端卡片显示详情
+fix(collectors): 室内温度被群晖磁盘温度抢占，改为按房间点名实体
+docs(config): 示例配置补 ha / vpn / wan 段，忽略就地备份文件
+chore: 忽略极空间整理的一次性临时脚本
 ```
+
+> 提交前确认作者身份：`git config user.name` / `user.email`。公开仓库的提交作者会永久留在历史里，
+> 建议用 `用户名@users.noreply.github.com` 而不是真实邮箱。
 
 ---
 

@@ -16,7 +16,8 @@
     "7. ha.outdoor_fallback 是天气实体整块 unavailable 时的备用温度源，按顺序取第一个有数的。",
     "8. vpn.clients 的键是隧道地址（10.8.8.X），拨入站点的名字和站点内网只有本地配置知道。",
     "9. ha.lamp_switch_prefix 是灯控面板的 switch 实体前缀（各家设备不同）。不配就只按",
-    "   实体名 _on_p_x_y 规则匹配 —— 会把「机柜插座」「空调喜好模式」也当成灯，建议按实际填。"
+    "   实体名 _on_p_x_y 规则匹配 —— 会把「机柜插座」「空调喜好模式」也当成灯，建议按实际填。",
+    "10. wan 段给双 WAN 起名字：isp/name 显示在界面，line 是「主线/副线」，acct 是宽带账号"
   ],
   "site": {
     "name": "Homelab NOC",
@@ -228,6 +229,22 @@
           }
         ]
       }
+    }
+  },
+  "wan": {
+    "wan1": {
+      "isp": "你的运营商A",
+      "name": "宽带A",
+      "line": "主线",
+      "acct": "YOUR_ISP_ACCOUNT_HERE",
+      "note": "默认路由，承载主要流量"
+    },
+    "wan2": {
+      "isp": "你的运营商B",
+      "name": "宽带B",
+      "line": "副线",
+      "acct": "YOUR_ISP_ACCOUNT_HERE",
+      "note": "分流备用"
     }
   },
   "topology": {
