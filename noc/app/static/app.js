@@ -34,9 +34,40 @@
     probeKey: '',
     vmKey: '',
     filter: 'all',
+    wallQ: '',
     devices: {},
     sheet: null,
+    vpnSites: {},
   };
+
+  /* ---------------- 页签：总览 / 网络 / 算力 / 终端 ----------------
+     一屏塞不下所有东西，就按「要不要现在处理」分层：
+     总览只回答「现在正常吗」，其余明细各自成页，进来才渲染关注。 */
+  const VIEWS = ['overview', 'network', 'compute', 'clients'];
+  let currentView = 'overview';
+
+  function setView(v, silent) {
+    if (VIEWS.indexOf(v) < 0) v = 'overview';
+    currentView = v;
+    $('app').setAttribute('data-view', v);
+    document.querySelectorAll('.view').forEach((el) => {
+      el.classList.toggle('is-on', el.id === 'view-' + v);
+    });
+    document.querySelectorAll('.tab').forEach((b) => {
+      const on = b.dataset.view === v;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    // 终端页本身就是终端墙，底部统计条在那一页是多余的
+    const sb = $('summaryBar');
+    if (sb) sb.style.display = v === 'clients' ? 'none' : '';
+    // 曲线 canvas 在隐藏容器里量不到宽度，切回总览补画一次
+    if (v === 'overview') drawChart();
+    if (v === 'compute') loadPveTrend();
+    if (!silent) {
+      try { history.replaceState(null, '', '#' + v); } catch (e) { /* 忽略 */ }
+    }
+  }
 
   /* ---------------- 工具 ---------------- */
   const pad = (n) => String(n).padStart(2, '0');
@@ -66,6 +97,16 @@
     let i = 0, v = bps;
     while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
     return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + ' ' + u[i];
+  }
+
+  /* 紧凑写法：给双 WAN 那一行的行内速率用，窄面板下也放得下 */
+  function fmtRateShort(bps) {
+    if (!bps || bps < 1) return '0';
+    const u = ['B', 'K', 'M', 'G'];
+    let i = 0, v = bps;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    const n = v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+    return n + u[i] + '/s';
   }
 
   function fmtBytes(b) {
@@ -122,26 +163,52 @@
   // 通用结构与坐标写在这里；节点上显示的文字由 config.local.json 的 topology 段
   // 通过 /api/snapshot 的 site.topology 下发覆盖（见 applySiteLabels）。
   // 因此仓库里不含任何内网地址。
+  //
+  // 本布局对应"双运营商 + 一台 H3C 核心交换机 + PVE 承载全部虚拟机"的家庭结构：
+  //   光猫A ┐                       ┌─ PVE ─┬─ 群晖 / 飞牛 / OpenWrt ×2 / HA
+  //         ├─ iKuai ─ H3C ────────┘
+  //   光猫B ┘            └─ GE8 ─ AP 汇聚交换 ─ 4 × AP（VLAN100 无线）
   const NODES = {
-    ont:    { x: 470, y: 72,  w: 176, title: '光猫',        sub: '桥接 · 2 路出口', probe: null },
-    iptv:   { x: 800, y: 72,  w: 168, title: 'IPTV 机顶盒',  sub: '独立链路',        probe: null },
-    ikuai:  { x: 470, y: 190, w: 176, title: 'iKuai 主路由', sub: '硬件直通',        probe: 'ikuai' },
-    switch: { x: 470, y: 306, w: 196, title: '2.5G PoE 交换机', sub: '5 口 · 2.5G', probe: 'switch', ports: 5 },
-    apsub:  { x: 148, y: 434, w: 152, title: '子 AP',        sub: 'PoE 供电',        probe: 'apsub' },
-    apmain: { x: 396, y: 434, w: 152, title: '主 AP',        sub: 'Mesh 主节点',     probe: 'apmain' },
-    pve:    { x: 690, y: 434, w: 168, title: 'PVE 宿主机',   sub: 'vmbr0 管理口',    probe: 'pve' },
-    nas:    { x: 396, y: 542, w: 176, title: 'NAS',           sub: '双 2.5G',         probe: 'nas' },
+    ont1:   { x: 176, y: 58,  w: 196, title: '光猫 A',      sub: 'WAN1',        probe: null },
+    ont2:   { x: 432, y: 58,  w: 196, title: '光猫 B',      sub: 'WAN2',        probe: null },
+    ikuai:  { x: 304, y: 176, w: 232, title: 'iKuai 主路由', sub: '双 WAN',      probe: 'ikuai' },
+    switch: { x: 304, y: 296, w: 252, title: 'H3C 交换机',   sub: 'GE1-8',       probe: null, ports: 10 },
+    apsw:   { x: 330, y: 370, w: 156, title: 'AP 汇聚交换',   sub: '',            probe: null, chip: true },
+    ap1:    { x: 78,  y: 432, w: 132, title: 'AP 1',        sub: '',            probe: 'ap1' },
+    ap2:    { x: 216, y: 432, w: 132, title: 'AP 2',        sub: '',            probe: 'ap2' },
+    ap3:    { x: 354, y: 432, w: 132, title: 'AP 3',        sub: '',            probe: 'ap3' },
+    ap4:    { x: 492, y: 432, w: 132, title: 'AP 4',        sub: '',            probe: 'ap4' },
+    pve:    { x: 786, y: 176, w: 232, title: 'PVE 宿主机',   sub: '',            probe: 'pve' },
+    vm1:    { x: 792, y: 286, w: 208, title: 'VM',          sub: '',            probe: 'syno' },
+    vm2:    { x: 792, y: 344, w: 208, title: 'VM',          sub: '',            probe: 'nas' },
+    vm3:    { x: 792, y: 402, w: 208, title: 'VM',          sub: '',            probe: 'openwrt' },
+    vm4:    { x: 792, y: 460, w: 208, title: 'VM',          sub: '',            probe: 'openwrt2' },
+    vm5:    { x: 792, y: 518, w: 208, title: 'VM',          sub: '',            probe: 'ha' },
+    // VPN 三个分支站点不占机位，直接排在右上角：一块一块的小卡，各自带隧道线
   };
+  // 站点卡坐标：x 左边界 / 宽 / 高 / 三行的中心 y（和右侧 PVE 顶部留 12px 间隙）
+  const VPN_TILE = { x: 660, w: 300, h: 38, ys: [26, 68, 110] };
   const NH = 54;
+  const VM_KEYS = ['vm1', 'vm2', 'vm3', 'vm4', 'vm5'];
 
   // 站点相关的显示文字 / NAS 地址：由后端从 config.local.json 下发，只应用一次
   let siteApplied = false;
   let NAS_IP = '';
+  let VM_NAMES = {};
 
   function applySiteMeta(site) {
     if (!site || siteApplied) return;
     siteApplied = true;
     NAS_IP = site.nas_ip || '';
+    VM_NAMES = site.vm_names || {};
+    // VPN 站点名录：隧道地址 → 站点名。只在配置里出现，前端不写死任何办公室名字
+    state.vpnSites = site.vpn || {};
+    // 站点名：标题栏与浏览器标签都用配置里的名字，避免面板上挂着别人的招牌
+    if (site.name) {
+      const bn = document.getElementById('brandName');
+      if (bn) bn.textContent = site.name;
+      document.title = site.name + ' · NOC';
+    }
     const labels = site.topology || {};
     for (const [key, lab] of Object.entries(labels)) {
       const n = NODES[key];
@@ -156,6 +223,23 @@
       if (tEl && lab.title) tEl.textContent = lab.title;
       if (sEl && lab.sub) sEl.textContent = lab.sub;
     }
+
+    // 双运营商：把 wan1 / wan2 标成真实运营商名字（配置里没写就退回 WAN1 / WAN2）
+    const wl = site.wan || {};
+    const tag1 = document.getElementById('wan1Tag');
+    const tag2 = document.getElementById('wan2Tag');
+    const tg1 = document.getElementById('tg-wan1');
+    const tg2 = document.getElementById('tg-wan2');
+    const nm = (k, fb) => {
+      const w = wl[k] || {};
+      const isp = w.isp || '';
+      const line = w.line || '';
+      return isp ? (isp + (line ? ' · ' + line : '')) : fb;
+    };
+    if (tag1) tag1.textContent = (wl.wan1 || {}).isp || 'WAN1';
+    if (tag2) tag2.textContent = (wl.wan2 || {}).isp || 'WAN2';
+    if (tg1) tg1.textContent = nm('wan1', 'WAN1');
+    if (tg2) tg2.textContent = nm('wan2', 'WAN2');
   }
 
   function portXY(node, idx) {
@@ -184,19 +268,48 @@
     nodesG.setAttribute('id', 'topoNodes');
     svg.appendChild(nodesG);
 
-    const p5 = portXY('switch', 4);
-    const p4 = portXY('switch', 3);
-    const p1 = portXY('switch', 0);
-    const p2 = portXY('switch', 1);
+    const nIK = NODES.ikuai, nSW = NODES.switch, nPVE = NODES.pve;
+    const apKeys = ['ap1', 'ap2', 'ap3', 'ap4'];
+    // 实测：4 台 AP 并不直接接在 H3C 上，而是都挂在 GE1/0/8 下联的那台 PoE 交换机后面
+    const apPort = portXY('switch', 7);
+    const BUSB = NODES.apsw.y + 18;     // AP 汇聚线：落在小牌子下方，横线不压牌子上的字
+
+    // AP 分支：GE8 先落到汇聚交换，再由它拉一条横线、各落一根到 4 台 AP
+    const apDrops = apKeys.map((k) => {
+      const ap = NODES[k];
+      return { id: 'lk-' + k, cls: 'lan', d: `M${ap.x},${BUSB} L${ap.x},${ap.y - NH / 2}` };
+    });
+    const busPaths = [
+      { id: 'lk-apsw', cls: 'lan',
+        d: `M${apPort.x},${nSW.y + NH / 2} L${apPort.x},${NODES.apsw.y - 11}` },
+      { id: 'lk-apsw2', cls: 'lan', flow: false,
+        d: `M${NODES.apsw.x},${NODES.apsw.y + 11} L${NODES.apsw.x},${BUSB}` },
+      { id: 'lk-bus', cls: 'lan', flow: false,
+        d: `M${NODES.ap1.x},${BUSB} L${NODES.ap4.x},${BUSB}` },
+    ];
 
     const paths = [
-      { id: 'lk-wan', cls: 'wan', d: `M${NODES.ont.x},${NODES.ont.y + NH / 2} L${NODES.ikuai.x},${NODES.ikuai.y - NH / 2}`, arrow: true },
-      { id: 'lk-iptv', cls: 'bypass', d: `M${NODES.ont.x + NODES.ont.w / 2},${NODES.ont.y} L${NODES.iptv.x - NODES.iptv.w / 2},${NODES.iptv.y}`, arrow: true },
-      { id: 'lk-lan', cls: 'lan', d: `M${NODES.ikuai.x},${NODES.ikuai.y + NH / 2} L${NODES.ikuai.x},${NODES.switch.y - NH / 2 - 26} L${p5.x},${NODES.switch.y - NH / 2 - 26} L${p5.x},${p5.y}`, arrow: true },
-      { id: 'lk-hairpin', cls: 'hairpin', d: `M${p4.x},${p4.y} C${p4.x},${p4.y + 66} ${NODES.pve.x - 10},${NODES.pve.y - 96} ${NODES.pve.x},${NODES.pve.y - NH / 2}`, arrow: true },
-      { id: 'lk-apsub', cls: 'lan', d: `M${p1.x},${p1.y} L${p1.x},${NODES.apsub.y - 34} L${NODES.apsub.x},${NODES.apsub.y - 34} L${NODES.apsub.x},${NODES.apsub.y - NH / 2}`, arrow: true },
-      { id: 'lk-apmain', cls: 'lan', d: `M${p2.x},${p2.y} L${p2.x},${NODES.apmain.y - 34} L${NODES.apmain.x},${NODES.apmain.y - 34} L${NODES.apmain.x},${NODES.apmain.y - NH / 2}`, arrow: true },
-      { id: 'lk-nas-wire', cls: 'bypass', d: `M${NODES.apmain.x},${NODES.apmain.y + NH / 2} L${NODES.apmain.x},${NODES.nas.y - NH / 2}`, arrow: false },
+      // 两条 WAN 分别从对应光猫下来，收敛到 iKuai 顶部
+      { id: 'lk-wan1', cls: 'wan', d: `M${NODES.ont1.x},${NODES.ont1.y + NH / 2} L${nIK.x - 18},${nIK.y - NH / 2}` },
+      { id: 'lk-wan2', cls: 'wan', d: `M${NODES.ont2.x},${NODES.ont2.y + NH / 2} L${nIK.x + 18},${nIK.y - NH / 2}` },
+      // iKuai 到交换机主干
+      { id: 'lk-lan', cls: 'lan', d: `M${nIK.x},${nIK.y + NH / 2} L${nIK.x},${nSW.y - NH / 2}` },
+      // 交换机到 PVE（trunk，弧形走右侧空白区）
+      { id: 'lk-pve', cls: 'lan', d: `M${nSW.x + nSW.w / 2},${nSW.y} C${nSW.x + nSW.w / 2 + 120},${nSW.y} ${nPVE.x - nPVE.w / 2 - 110},${nPVE.y} ${nPVE.x - nPVE.w / 2},${nPVE.y}` },
+      // VPN：三个分支站点各拉一条隧道，并到同一根竖管再落回 iKuai 公网侧
+      ...VPN_TILE.ys.map((y, i) => (
+        { id: 'lk-vpn-' + i, cls: 'tunnel', d: `M${VPN_TILE.x},${y} L612,${y}` }
+      )),
+      { id: 'lk-vpn', cls: 'tunnel',
+        d: `M612,${VPN_TILE.ys[0]} L612,${VPN_TILE.ys[2]} Q612,130 600,130 L398,130 Q386,130 386,142 L386,${nIK.y - NH / 2}` },
+      ...busPaths,
+      ...apDrops,
+      // PVE → 五台虚拟机：左侧一条竖脊 + 每台一段短横
+      ...VM_KEYS.map((k) => {
+        const vm = NODES[k];
+        return { id: 'lk-' + k, cls: 'bypass', arrow: false,
+          d: `M${nPVE.x},${nPVE.y + NH / 2} L${nPVE.x},${nPVE.y + NH / 2 + 16} L660,${nPVE.y + NH / 2 + 16} L660,${vm.y} L${vm.x - vm.w / 2},${vm.y}` };
+      }),
     ];
 
     for (const p of paths) {
@@ -207,7 +320,7 @@
       if (p.cls === 'bypass') base.setAttribute('marker-end', 'url(#tw-arrow)');
       links.appendChild(base);
 
-      if (p.cls !== 'bypass') {
+      if (p.cls !== 'bypass' && p.flow !== false) {
         const flow = document.createElementNS(SVG_NS, 'path');
         flow.setAttribute('class', 'flow ' + p.cls);
         flow.setAttribute('d', p.d);
@@ -217,14 +330,10 @@
       }
     }
 
+    // 链路文字标注：都放在链路旁边留白处，避免压在线上
     const labels = [
-      { x: 300, y: 132, t: 'WAN 2.5G', cls: 'tag', anchor: 'end' },
-      { x: 596, y: 132, t: 'IPTV 独立链路', cls: 'tag', anchor: 'start' },
-      { x: 580, y: 246, t: 'LAN1 · 口 5 直通', cls: 'tag', anchor: 'start' },
-      { x: 730, y: 366, t: '口 4 回程 → NIC3 → vmbr0', cls: 'tag-warn', anchor: 'end' },
-      { x: 186, y: 392, t: '口 1 · PoE', cls: 'tag', anchor: 'start' },
-      { x: 424, y: 392, t: '口 2', cls: 'tag', anchor: 'start' },
-      { x: 430, y: 500, t: '二层旁路 · 不经 iKuai', cls: 'tag', anchor: 'start' },
+      { x: nIK.x + 14, y: 240, t: 'trunk · VLAN100/200', cls: 'tag', anchor: 'start' },
+      { x: 14, y: 340, t: 'VLAN100 无线 · PoE', cls: 'tag', anchor: 'start' },
     ];
     for (const l of labels) {
       const t = document.createElementNS(SVG_NS, 'text');
@@ -232,10 +341,12 @@
       t.setAttribute('class', l.cls);
       t.setAttribute('text-anchor', l.anchor);
       t.textContent = l.t;
+      if (l.id) t.setAttribute('id', l.id);
       links.appendChild(t);
     }
 
     for (const [key, n] of Object.entries(NODES)) {
+      if (n.chip) continue;                     // 小牌子单独画（见下）
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('class', 'node on');
       g.setAttribute('id', 'nd-' + key);
@@ -266,54 +377,85 @@
       g.appendChild(sub);
 
       if (n.ports) {
+        // 端口条画在盒子内部下沿（像交换机前面板），不越界、不压链路
         const left = n.x - n.w / 2, step = n.w / n.ports;
         for (let i = 0; i < n.ports; i++) {
           const cx = left + step * (i + 0.5);
           const port = document.createElementNS(SVG_NS, 'rect');
-          port.setAttribute('x', cx - 7);
-          port.setAttribute('y', n.y + NH / 2 - 3);
-          port.setAttribute('width', 14);
-          port.setAttribute('height', 8);
-          port.setAttribute('rx', 2);
+          port.setAttribute('x', cx - 6);
+          port.setAttribute('y', n.y + NH / 2 - 11);
+          port.setAttribute('width', 12);
+          port.setAttribute('height', 6);
+          port.setAttribute('rx', 1.5);
           port.setAttribute('id', 'pt-' + (i + 1));
           port.setAttribute('class', 'portbox');
           g.appendChild(port);
-
-          const num = document.createElementNS(SVG_NS, 'text');
-          num.setAttribute('x', cx);
-          num.setAttribute('y', n.y + NH / 2 + 13);
-          num.setAttribute('text-anchor', 'middle');
-          num.setAttribute('class', 'tag');
-          num.setAttribute('style', 'font-size:8px');
-          num.textContent = String(i + 1);
-          g.appendChild(num);
-
-          const rt = mkText(cx, n.y + NH / 2 + 24, 'port-rate', 'middle', '');
-          rt.setAttribute('id', 'ptr-' + (i + 1));
-          g.appendChild(rt);
         }
       }
 
       nodesG.appendChild(g);
     }
 
-    const rateWan = mkText(NODES.ont.x, NODES.ont.y - NH / 2 - 10, 'node-rate', 'middle', '');
-    rateWan.setAttribute('id', 'rt-wan');
-    links.appendChild(rateWan);
+    // 「链路上一块小牌子」型节点：AP 汇聚交换（无管理地址）、VPN 入口（点开有弹窗）。
+    // 它们不占机位、不参与探针，所以单独一轮画，文字 id 给 updateTopo 改。
+    for (const [key, n] of Object.entries(NODES)) {
+      if (!n.chip) continue;
+      const h = n.h || 22;
+      const g = document.createElementNS(SVG_NS, 'g');
+      g.setAttribute('class', 'node on' + (n.click ? ' clickable' : ''));
+      g.setAttribute('id', 'nd-' + key);
+      const r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('class', 'node-box chip' + (n.vpn ? ' vpn' : ''));
+      r.setAttribute('x', n.x - n.w / 2);
+      r.setAttribute('y', n.y - h / 2);
+      r.setAttribute('width', n.w);
+      r.setAttribute('height', h);
+      r.setAttribute('rx', h / 2);
+      g.appendChild(r);
+      const t = mkText(n.x, n.y + 3.5, 'node-title chip-text', 'middle', n.title);
+      t.setAttribute('id', 'nt-' + key);
+      g.appendChild(t);
+      if (n.click) {
+        // 牌子的底色是透明的，得显式给整块矩形开命中，否则只有描边那 1px 能点
+        r.style.pointerEvents = 'all';
+        t.style.pointerEvents = 'none';
+        g.addEventListener('click', () => openVpnModal());
+      }
+      nodesG.appendChild(g);
+    }
 
-    const rateLan = mkText(NODES.ikuai.x, NODES.ikuai.y + NH / 2 + 15, 'node-rate', 'middle', '');
+    const rateWan1 = mkText(NODES.ont1.x, NODES.ont1.y - NH / 2 - 8, 'node-rate', 'middle', '');
+    rateWan1.setAttribute('id', 'rt-wan1');
+    links.appendChild(rateWan1);
+
+    const rateWan2 = mkText(NODES.ont2.x, NODES.ont2.y - NH / 2 - 8, 'node-rate', 'middle', '');
+    rateWan2.setAttribute('id', 'rt-wan2');
+    links.appendChild(rateWan2);
+
+    const rateLan = mkText(NODES.ikuai.x + NODES.ikuai.w / 2 + 8, NODES.ikuai.y + 4, 'node-rate', 'start', '');
     rateLan.setAttribute('id', 'rt-lan');
     links.appendChild(rateLan);
 
-    const rateHair = mkText(716, 350, 'node-rate', 'start', '');
-    rateHair.setAttribute('id', 'rt-hair');
-    rateHair.setAttribute('style', 'fill:var(--warn)');
-    links.appendChild(rateHair);
+    // 每台 AP 下方显示它的无线终端实时吞吐合计
+    for (const key of ['ap1', 'ap2', 'ap3', 'ap4']) {
+      const n = NODES[key];
+      const t = mkText(n.x, n.y + NH / 2 + 18, 'node-rate', 'middle', '');
+      t.setAttribute('id', 'rt-' + key);
+      links.appendChild(t);
+    }
 
-    const rateNas = mkText(NODES.nas.x, NODES.nas.y + NH / 2 + 20, 'node-rate', 'middle', '');
-    rateNas.setAttribute('id', 'rt-nas');
-    rateNas.setAttribute('style', 'fill:var(--violet)');
-    links.appendChild(rateNas);
+    // 每台虚拟机右侧显示 CPU% / 已用内存
+    for (const key of VM_KEYS) {
+      const n = NODES[key];
+      const t = mkText(n.x + n.w / 2 + 8, n.y + 4, 'node-rate', 'start', '');
+      t.setAttribute('id', 'rt-' + key);
+      links.appendChild(t);
+    }
+
+    // VPN 分支站点：容器压在最上层，卡片内容由 renderVpnTiles 按配置 + 实测数据填
+    const vpnG = document.createElementNS(SVG_NS, 'g');
+    vpnG.setAttribute('id', 'vpnTiles');
+    svg.appendChild(vpnG);
   }
 
   function mkText(x, y, cls, anchor, content) {
@@ -337,10 +479,12 @@
 
   function updateTopo(snap) {
     const wan = snap.wan || {};
+    const wan2 = snap.wan2 || {};
     const lan = snap.lan || {};
     const probes = {};
     (snap.probes || []).forEach((p) => { probes[p.key] = p; });
 
+    // 探针驱动的节点状态
     for (const [key, n] of Object.entries(NODES)) {
       const g = $('nd-' + key);
       if (!g) continue;
@@ -349,21 +493,52 @@
       g.setAttribute('class', 'node ' + (p && p.up ? 'on' : 'off'));
     }
 
-    // 交换机端口：所有链路速率都来自设备实测，不再用比例估算
-    const pt = {};
-    ((snap.switch || {}).ports || []).forEach((p) => { pt[p.no] = p; });
-    const sum = (p) => (p ? (p.rx || 0) + (p.tx || 0) : 0);
-    const lanTotal = (lan.up || 0) + (lan.down || 0);
+    // 光猫状态跟随各自 WAN 的线路检测结果（拨号成功且有地址才亮）
+    const setOnt = (key, w) => {
+      const g = $('nd-' + key);
+      if (!g) return;
+      const alive = !!(w && (w.ip || w.public_ip)) && w.ok !== false;
+      g.setAttribute('class', 'node ' + (alive ? 'on' : 'off'));
+    };
+    setOnt('ont1', wan);
+    setOnt('ont2', wan2);
 
-    const wanTotal = (wan.up || 0) + (wan.down || 0);
-    setFlow('lk-wan', wanTotal);
-    setFlow('lk-lan', sum(pt[5]) || lanTotal);
-    setFlow('lk-apsub', sum(pt[1]));
-    setFlow('lk-apmain', sum(pt[2]));
-    setFlow('lk-hairpin', sum(pt[4]));
+    // 交换机现在有 SSH 管理通道，状态直接取自采集结果
+    const sw = snap.switch || {};
+    const swG = $('nd-switch');
+    if (swG) swG.setAttribute('class', 'node ' + (sw.ok ? 'on' : 'off'));
+
+    // 链路流速：全部来自实测
+    setFlow('lk-wan1', (wan.up || 0) + (wan.down || 0));
+    setFlow('lk-wan2', (wan2.up || 0) + (wan2.down || 0));
+    setFlow('lk-lan', (lan.up || 0) + (lan.down || 0));
+
+    const pt = {};
+    (sw.ports || []).forEach((p) => { pt[p.no] = p; });
+    const sum = (p) => (p ? (p.rx || 0) + (p.tx || 0) : 0);
+
+    // GE7 是 PVE 业务 trunk，交换机→PVE 那根弧线的流速就取它
+    setFlow('lk-pve', sum(pt[7]));
+
+    // AP 汇聚交换的牌子跟着 GE8 亮灭
+    const apSwG = $('nd-apsw');
+    if (apSwG) apSwG.setAttribute('class', 'node ' + (pt[8] && pt[8].up ? 'on' : 'off'));
+    setFlow('lk-apsw', sum(pt[8]));
+
+    // VPN：三个分支站点直接画在拓扑上，在线站点自己那条隧道会流动
+    const vpn = snap.vpn || {};
+    const vlinks = vpn.links || [];
+    const vlink = vlinks.find((l) => l.ok) || vlinks[0];
+    const vclients = (vpn.server || {}).clients || [];
+    const vrows = vpnSiteRows(vpn);
+    renderVpnTiles(vpn, vrows);
+    VPN_TILE.ys.forEach((y, i) => {
+      setFlow('lk-vpn-' + i, vrows[i] && vrows[i].c ? 900 : 0);
+    });
+    setFlow('lk-vpn', (vclients.length || (vlink && vlink.ok)) ? 1800 : 0);
 
     // 端口方块状态 + 速率标注（颜色交给 CSS，主题切换才跟着变）
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 10; i++) {
       const box = $('pt-' + i);
       const txt = $('ptr-' + i);
       const p = pt[i];
@@ -374,35 +549,51 @@
       }
     }
 
-    const rtWan = $('rt-wan');
-    if (rtWan) rtWan.textContent = '↓ ' + fmtRate(wan.down) + '   ↑ ' + fmtRate(wan.up);
+    // 每台 AP：爱快终端表对无线客户端只给协商速率、不给实时流量，
+    // 所以这里显示在线台数；真有流量数据时再补速率
+    const aps = {};
+    ((snap.miwifi || {}).aps || []).forEach((a) => { if (a.node) aps[a.node] = a; });
+    for (const key of ['ap1', 'ap2', 'ap3', 'ap4']) {
+      const a = aps[key];
+      const t = a ? (a.up || 0) + (a.down || 0) : 0;
+      setFlow('lk-' + key, t);
+      const rt = $('rt-' + key);
+      if (!rt) continue;
+      // AP 框只有 132px 宽，只放台数；流量数值留给右侧「无线覆盖」面板
+      rt.textContent = a ? a.online + ' 台在线' : '';
+    }
+
+    const rtWan1 = $('rt-wan1');
+    if (rtWan1) rtWan1.textContent = '↓ ' + fmtRate(wan.down) + '   ↑ ' + fmtRate(wan.up);
+
+    const rtWan2 = $('rt-wan2');
+    if (rtWan2) {
+      rtWan2.textContent = (wan2.ip || wan2.public_ip)
+        ? '↓ ' + fmtRate(wan2.down) + '   ↑ ' + fmtRate(wan2.up) : '';
+    }
 
     const rtLan = $('rt-lan');
     if (rtLan) rtLan.textContent = '↓ ' + fmtRate(lan.down) + '   ↑ ' + fmtRate(lan.up);
 
-    const rtHair = $('rt-hair');
-    if (rtHair) {
-      const t = sum(pt[4]);
-      rtHair.textContent = t ? fmtRate(t) : '';
-    }
-
-    const rtNas = $('rt-nas');
-    if (rtNas) {
-      const n = snap.nas;
-      if (n && n.ok) {
-        // NAS 网卡实测总吞吐；减去 iKuai 看到的 .30 外网流量 = 纯二层内网流量
-        const l2 = n.l2_bps || 0;
-        rtNas.textContent = fmtRate(n.total_bps) + (l2 > 8000 ? ' · 内网 ' + fmtRate(l2) : '');
-        rtNas.setAttribute('class', l2 > 1e6 ? 'node-rate hot' : 'node-rate');
-      } else if (n && n.name) {
-        rtNas.textContent = '采集端失联';
-        rtNas.setAttribute('class', 'node-rate bad');
-      } else {
-        const dev = NAS_IP ? (snap.devices || []).find((d) => d.ip === NAS_IP) : null;
-        const t = dev ? (dev.up || 0) + (dev.down || 0) : 0;
-        const ap = dev && dev.wifi_ap ? ' · ' + dev.wifi_ap : '';
-        rtNas.textContent = t ? '外网 ' + fmtRate(t) + ap : (ap.replace(' · ', '') || '—');
-      }
+    // 虚拟机小字：CPU 占用 + 已用内存（来自 PVE /cluster/resources）
+    const guests = {};
+    ((snap.pve || {}).guests || []).forEach((g) => { guests[g.vmid] = g; });
+    const VM_ID = { vm1: 204, vm2: 203, vm3: 100, vm4: 200, vm5: 202 };
+    for (const [key, vmid] of Object.entries(VM_ID)) {
+      const g = guests[vmid];
+      const gEl = $('nd-' + key);
+      if (!gEl) continue;
+      if (g) gEl.setAttribute('class', 'node ' + (g.status === 'running' ? 'on' : 'off'));
+      const rt = $('rt-' + key);
+      if (!rt) continue;
+      if (!g) { rt.textContent = '—'; continue; }
+      const mem = g.mem ? (g.mem / 1073741824).toFixed(1) : '0';
+      const maxmem = g.maxmem ? Math.round(g.maxmem / 1073741824) : 0;
+      // 采集器里 cpu 已经是百分比（PVE 的 0~1 已在后端 ×100）
+      rt.textContent = g.status === 'running'
+        ? (g.cpu || 0).toFixed(1) + '% · ' + mem + '/' + maxmem + 'G'
+        : '已停止';
+      rt.setAttribute('class', g.status === 'running' ? 'node-rate' : 'node-rate bad');
     }
   }
 
@@ -462,9 +653,11 @@
   }
 
   function pushSeries(snap) {
-    const wan = snap.wan || {};
-    state.series.down.push(wan.down || 0);
-    state.series.up.push(wan.up || 0);
+    const w1 = snap.wan || {};
+    const w2 = snap.wan2 || {};
+    // 大盘曲线 = 双线合计（联通 + 广电），单线速率在各自那一行里显示
+    state.series.down.push((w1.down || 0) + (w2.down || 0));
+    state.series.up.push((w1.up || 0) + (w2.up || 0));
     const MAX = 120;
     if (state.series.down.length > MAX) state.series.down.shift();
     if (state.series.up.length > MAX) state.series.up.shift();
@@ -495,23 +688,63 @@
 
     const ik = snap.ikuai || {};
     $('wanUptime').textContent = ik.uptime ? '运行 ' + fmtDur(ik.uptime) : '—';
-    $('wanDownBig').textContent = fmtRate(wan.down);
-    $('wanUpBig').textContent = fmtRate(wan.up);
-    $('wanUp').textContent = fmtRate(wan.up);
-    $('wanDown').textContent = fmtRate(wan.down);
+
+    // 双 WAN：每行显示各自实时速率，大盘显示双线合计
+    const w1 = snap.wan || {};
+    const w2 = snap.wan2 || null;
+    const totDown = (w1.down || 0) + (w2 ? (w2.down || 0) : 0);
+    const totUp = (w1.up || 0) + (w2 ? (w2.up || 0) : 0);
+    $('wanDownBig').textContent = fmtRate(totDown);
+    $('wanUpBig').textContent = fmtRate(totUp);
+    $('wanUp').textContent = fmtRate(totUp);
+    $('wanDown').textContent = fmtRate(totDown);
+
+    const r1 = $('wan1Rate');
+    if (r1) {
+      r1.innerHTML = (w1.public_ip || w1.ip)
+        ? '↑ <b>' + fmtRateShort(w1.up) + '</b> · ↓ <b>' + fmtRateShort(w1.down) + '</b>'
+        : '';
+    }
+    const st1 = $('wan1State');
+    if (st1) {
+      const ok1 = w1.ok !== false;
+      st1.textContent = ok1 ? '' : '断线';
+      st1.className = 'wan2-state ' + (ok1 ? 'ok' : 'bad');
+    }
+
+    // 双 WAN：WAN2 副线路（有数据才显示）
+    const w2row = $('wan2Row');
+    if (w2row) {
+      if (w2 && w2.ip) {
+        w2row.hidden = false;
+        $('wan2Ip').textContent = w2.ip;
+        const ok2 = w2.ok !== false;
+        const st2 = $('wan2State');
+        // 正常时不占位（头部的 PPPoE 徽标已经说明了），只有断线才红字提示
+        st2.textContent = ok2 ? '' : '断线';
+        st2.className = 'wan2-state ' + (ok2 ? 'ok' : 'bad');
+        $('wan2Up').textContent = fmtRateShort(w2.up);
+        $('wan2Down').textContent = fmtRateShort(w2.down);
+      } else {
+        w2row.hidden = true;
+      }
+    }
 
     $('onlineCount').textContent = snap.summary ? snap.summary.online : '—';
     $('knownCount').textContent = '/' + (snap.summary ? snap.summary.known : '—');
     $('connCount').textContent = (ik.conn_total || 0).toLocaleString();
 
     renderStatusBand(snap);
+    renderVPN(snap.vpn);
     renderPorts(snap.switch);
     renderWifi(snap.miwifi);
     renderProbes(snap.probes || []);
     renderPVE(snap.pve);
+    renderIkuai(snap.ikuai, snap.ifaces, snap.wan_check);
     renderStore(snap.pve, snap.local);
     renderEvents(snap.events || []);
     renderWall(snap.devices || [], snap.summary);
+    renderSummary(snap.summary);
     refreshSheet();
   }
 
@@ -527,15 +760,20 @@
     const sum = snap.summary || {};
     const env = ha.env || [];
 
-    // 优先选带湿度的室温传感器（温湿度一体的那个才是室内真实体感）
-    let room = env.find((e) => e.temp != null && e.hum != null);
-    if (!room) room = env.find((e) => e.temp != null);
+    // 室内固定读客厅（ZM1）：HA 里叫「温度」的实体有几十个，按数组顺序抓第一个
+    // 会抓到群晖磁盘 68°C，所以顺序由后端按 config 里的房间表定好，这里只认客厅
+    const room = env.find((e) => e.name === '客厅') || env.find((e) => e.temp != null) || env[0];
     setTxt('sbTemp', room && room.temp != null ? room.temp.toFixed(1) + '°' : '—');
-    setTxt('sbHum', room && room.hum != null ? room.hum.toFixed(0) + '% · ' + room.name : (room ? room.name : '无传感器'));
+    setTxt('sbHum', room ? (room.hum != null ? room.hum.toFixed(0) + '% · ' + room.name : room.name) : '无传感器');
+    setTip('sbiEnv', envTip(room));
+    setSbi('sbiEnv', room && room.stale ? 'dim' : '');
 
     const od = ha.outdoor || {};
     setTxt('sbOutdoor', od.temp != null ? od.temp.toFixed(1) + '°' : '—');
-    setTxt('sbWeather', od.cond ? (WEATHER_CN[od.cond] || od.cond) : '—');
+    // 天气实体挂了退回备用传感器时没有天气现象，就把来源写在这里
+    setTxt('sbWeather', od.cond ? (WEATHER_CN[od.cond] || od.cond) : (od.short || (od.src || '').slice(0, 5) || '—'));
+    setTip('sbiOut', outTip(od));
+    setSbi('sbiOut', od.stale ? 'dim' : '');
 
     const lo = sum.lights_on || 0, lt = sum.lights_total || 0;
     setTxt('sbLights', lt ? `${lo}/${lt}` : '—');
@@ -618,6 +856,46 @@
     if (box) box.title = text;
   }
 
+  // 悬浮看全这个房间的读数：温度湿度 + 空气指标（PM2.5 / 甲醛…），不用点开
+  function envTip(room) {
+    if (!room) return 'HA 里没有可用的室内传感器';
+    const lines = [`${room.name}${room.src ? '（' + room.src + '）' : ''}`];
+    if (room.temp != null) lines.push('温度 ' + room.temp.toFixed(1) + '°C');
+    if (room.hum != null) lines.push('湿度 ' + room.hum.toFixed(0) + '%');
+    (room.extra || []).forEach((x) => lines.push(`${x.k} ${fmtAir(x)}`));
+    if (room.stale) lines.push(`（传感器暂时没上报，显示 ${agoText(room.stale)}的读数）`);
+    lines.push('', '点击查看各房间');
+    return lines.join('\n');
+  }
+
+  function outTip(od) {
+    if (!od || od.temp == null) return '没有可用的天气实体';
+    const bits = ['室外 · ' + (od.src || od.entity || od.name || 'weather')];
+    bits.push(`${WEATHER_CN[od.cond] || od.cond || '备用传感器'} ${od.temp.toFixed(1)}°C`);
+    if (od.hum != null) bits.push('湿度 ' + od.hum.toFixed(0) + '%');
+    if (od.wind != null) bits.push('风 ' + od.wind.toFixed(1) + ' km/h');
+    if (od.pressure != null) bits.push('气压 ' + od.pressure.toFixed(0) + ' hPa');
+    if (od.dew != null) bits.push('露点 ' + od.dew.toFixed(1) + '°C');
+    if (od.stale) bits.push(`（天气实体暂时不可用，显示 ${agoText(od.stale)}的读数）`);
+    return bits.join('\n');
+  }
+
+  // 多久之前的读数：秒 → 刚到 / N 分钟前 / N 小时前
+  function agoText(sec) {
+    const s = Math.max(0, Number(sec) || 0);
+    if (s < 90) return '刚刚';
+    if (s < 5400) return Math.round(s / 60) + ' 分钟前';
+    return Math.round(s / 3600) + ' 小时前';
+  }
+
+  // 空气质量读数：整数就不带小数，0.04 这种保留两位
+  function fmtAir(x) {
+    const v = Number(x.v);
+    if (!isFinite(v)) return String(x.v);
+    const s = Math.abs(v) >= 10 || Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2);
+    return s + (x.u ? ' ' + x.u : '');
+  }
+
   function lampTip(ha, lo, lt) {
     const on = (ha.lamps || []).filter((l) => l.on);
     if (!on.length) return `共 ${lt} 盏灯，当前全暗`;
@@ -642,13 +920,8 @@
   }
 
   /* ---------------- 交换机端口 ---------------- */
-  const PORTS = [
-    { no: 1, role: '书房 AP', node: 'apsub' },
-    { no: 2, role: '客厅 AP', node: 'apmain' },
-    { no: 3, role: '空置', node: null },
-    { no: 4, role: 'PVE 回程', node: 'pve' },
-    { no: 5, role: 'iKuai 主干', node: 'ikuai' },
-  ];
+  // H3C 只有 8 个 RJ45 电口 + 2 个 SFP；面板只列电口，SFP 状态放到脚注里
+  const PORT_GE = [1, 2, 3, 4, 5, 6, 7, 8];
 
   function renderPorts(sw) {
     const ul = $('portList');
@@ -657,38 +930,323 @@
     const byNo = {};
     ports.forEach((p) => { byNo[p.no] = p; });
     const maxRate = Math.max(1024 * 64, ...ports.map((p) => (p.rx || 0) + (p.tx || 0)));
+    // 网络页是逐口的明细页，10 个口（8 电 + 2 光）全列，别再把 SFP 塞进脚注
+    const nos = PORT_GE.concat([9, 10].filter((n) => byNo[n]));
 
-    ul.innerHTML = PORTS.map((meta) => {
-      const p = byNo[meta.no] || { up: false, rx: 0, tx: 0, speed: '—' };
+    ul.innerHTML = nos.map((no) => {
+      const p = byNo[no] || { no: no, up: false, rx: 0, tx: 0, speed: '' };
       const up = !!p.up;
       const total = (p.rx || 0) + (p.tx || 0);
-      const rxW = Math.min((p.rx || 0) / maxRate * 100, 100);
-      const txW = Math.min((p.tx || 0) / maxRate * 100, 100);
-      const rateHtml = up && total > 512
-        ? `<b>${fmtRate(p.rx)}</b> <i>${fmtRate(p.tx)}</i>`
-        : (up ? '<span style="color:var(--txt-3)">空闲</span>' : '—');
-      // speed 带 ? 后缀 = 本轮速率没读到，沿用上次（交换机页面偶发读 0，链路是通的）
-      const speedTxt = up ? (p.speed || '') : 'DOWN';
-      const jit = p.jitter ? ' · 速率读数抖动，已沿用上次值' : '';
-      return `<li class="${up ? 'up' : 'down'}" title="口${meta.no} ${meta.role} · ${p.speed || '—'}${jit}">
-        <span class="port-no">${meta.no}</span>
+      // 有流量就至少给 1.2% 宽，否则千分之几的占用会渲染成一个像灰尘的点
+      const barW = (v) => (v ? Math.max(Math.min(v / maxRate * 100, 100), 1.2) : 0);
+      const rxW = barW(p.rx || 0);
+      const txW = barW(p.tx || 0);
+      const rateHtml = (!sw || !sw.ok)
+        ? ''
+        : (up && total > 512
+          ? `<b>${fmtRate(p.rx)}</b><i>${fmtRate(p.tx)}</i>`
+          : (up ? '<span class="idle">空闲</span>' : '—'));
+      const speedTxt = up ? (p.speed || '') : (sw && sw.ok ? 'DOWN' : '—');
+      const role = p.role || ('口 ' + no);
+      const isSfp = no > 8;
+      const linkTxt = p.link_type
+        ? p.link_type.toUpperCase() + (p.vlan ? ' ' + p.vlan : (p.pvid ? ' P' + p.pvid : ''))
+        : (p.pvid ? 'PVID ' + p.pvid : '—');
+      const tip = [`口${no} ${role}`, p.desc ? '设备名 ' + p.desc : '',
+        linkTxt, up ? (p.speed || '') : '未连接',
+        p.errors ? p.errors + ' 个错误包' : ''].filter(Boolean).join(' · ');
+      return `<li class="${up ? 'up' : 'down'}${isSfp ? ' sfp' : ''}" title="${tip}">
+        <span class="port-no">${no}</span>
         <span class="port-mid">
-          <span class="port-name">${meta.role}<em class="${p.jitter ? 'jit' : ''}">${speedTxt}</em></span>
-          <span class="port-bars"><i class="rx" style="width:${rxW.toFixed(1)}%"></i><i class="tx" style="width:${txW.toFixed(1)}%"></i></span>
+          <span class="port-name"><span class="pn-txt">${role}</span><em>${speedTxt}</em></span>
+          <span class="port-desc">${esc(p.desc || (up ? '—' : '未接线'))}</span>
         </span>
+        <span class="port-vlan">${linkTxt}</span>
+        <span class="port-bars"><i class="rx" style="width:${rxW.toFixed(1)}%"></i><i class="tx" style="width:${txW.toFixed(1)}%"></i></span>
         <span class="port-rate ${up && total > 512 ? '' : 'off'}">${rateHtml}</span>
+        ${p.errors ? `<span class="port-err">${p.errors}</span>` : '<span class="port-err"></span>'}
       </li>`;
     }).join('');
 
+    const hint = $('portHint');
+    if (hint) hint.textContent = (sw && sw.ok) ? (sw.model || 'H3C').replace('H3C ', '') : '—';
+
     const foot = $('portFoot');
     if (foot) {
-      const upN = sw ? sw.up_count : 0;
-      const poe = sw ? sw.poe_used_w : 0;
-      const poeCap = sw ? sw.poe_ports : 0;
-      foot.innerHTML = sw && sw.ok
-        ? `<span><b>${upN}</b>/${sw.total_ports} 链路</span><span>PoE <b>${poe.toFixed(1)}W</b> · ${poeCap} 口</span>`
-        : '<span style="color:var(--crit)">交换机不可达</span>';
+      if (sw && sw.ok) {
+        const sfpUp = [9, 10].filter((n) => byNo[n] && byNo[n].up).length;
+        foot.innerHTML = `<span><b>${sw.up_count}</b>/${sw.total_ports} 链路在线</span>`
+          + `<span>SFP+ ${sfpUp ? sfpUp + '/2 使用' : '空'}</span>`
+          + (sw.poe_used_w ? `<span>PoE ${sw.poe_used_w} W</span>` : '')
+          + `<span>收 / 发</span>`;
+      } else {
+        foot.innerHTML = sw
+          ? '<span style="color:var(--crit)">交换机 SSH 采集失败</span>'
+          : '<span style="color:var(--txt-3)">等待交换机数据</span>';
+      }
     }
+  }
+
+  /* ---------------- VPN 隧道 ---------------- */
+  // 站点名：隧道 IP 是主键，账号名兜底（爱快偶尔把会话记在别的 lanip 上）
+  function vpnSiteOf(ip, user) {
+    const sites = state.vpnSites || {};
+    const m = sites[ip];
+    if (m && (m.name || m.short)) return m;
+    for (const v of Object.values(sites)) {
+      if (user && v.user === user) return v;
+    }
+    return m || {};
+  }
+
+  function vpnSiteRows(vpn) {
+    const srv = (vpn && vpn.server) || { clients: [] };
+    const clients = (srv.clients || []).slice();
+    const byIp = {};
+    clients.forEach((c) => { if (c.ip) byIp[c.ip] = c; });
+
+    // 先按配置铺：三个站点即使离线也要占一张卡，拓扑才不会时有时无
+    const rows = [];
+    for (const ip of Object.keys(state.vpnSites || {})) {
+      rows.push({ ip, meta: state.vpnSites[ip] || {}, c: byIp[ip] || null });
+      delete byIp[ip];
+    }
+    // 配置里没登记、但确实拨进来的（比如临时账号），照样补一张卡
+    for (const c of clients) {
+      if (c.ip && byIp[c.ip]) {
+        rows.push({ ip: c.ip, meta: {}, c });
+        delete byIp[c.ip];
+      }
+    }
+    return rows;
+  }
+
+  /* ---------------- VPN 站点卡（拓扑右上角直显，不再是弹窗里的隐藏信息） ---------------- */
+  let _vpnTileKey = '';
+  function renderVpnTiles(vpn, rowsIn) {
+    const g = $('vpnTiles');
+    if (!g) return;
+    const rows = (rowsIn || vpnSiteRows(vpn)).slice(0, VPN_TILE.ys.length);
+
+    // 只有真正变了才重建，免得每 2 秒把 hover / 悬浮提示全部重置
+    const key = rows.map((r) => [
+      r.ip, r.c ? 1 : 0, r.meta.name || '', r.meta.gw || '', r.meta.lan || '',
+      (r.meta.dev || []).map((d) => d.name + d.ip).join(','),
+      r.c ? (r.c.user || '') + '|' + (r.c.peer || '') + '|' + (r.c.since || '') : '',
+    ].join('|')).join('~');
+    if (key === _vpnTileKey) return;
+    _vpnTileKey = key;
+    g.innerHTML = '';
+
+    rows.forEach((r, i) => {
+      const cy = VPN_TILE.ys[i];
+      const on = !!r.c;
+      const meta = r.meta || {};
+      const name = meta.name || meta.short || (r.c && r.c.user) || '未知站点';
+      const l2 = [meta.gw, meta.lan].filter(Boolean).join(' · ') || r.ip;
+
+      const grp = document.createElementNS(SVG_NS, 'g');
+      grp.setAttribute('class', 'vtile ' + (on ? 'on' : 'off'));
+
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('class', 'vt-box');
+      rect.setAttribute('x', VPN_TILE.x);
+      rect.setAttribute('y', cy - VPN_TILE.h / 2);
+      rect.setAttribute('width', VPN_TILE.w);
+      rect.setAttribute('height', VPN_TILE.h);
+      rect.setAttribute('rx', 9);
+      grp.appendChild(rect);
+
+      const bar = document.createElementNS(SVG_NS, 'rect');
+      bar.setAttribute('class', 'vt-bar');
+      bar.setAttribute('x', VPN_TILE.x);
+      bar.setAttribute('y', cy - VPN_TILE.h / 2 + 1);
+      bar.setAttribute('width', 3);
+      bar.setAttribute('height', VPN_TILE.h - 2);
+      bar.setAttribute('rx', 1.5);
+      grp.appendChild(bar);
+
+      grp.appendChild(mkText(VPN_TILE.x + 16, cy - 3, 'vt-name', 'start', name));
+      grp.appendChild(mkText(VPN_TILE.x + 16, cy + 12, 'vt-sub', 'start', l2));
+      grp.appendChild(mkText(VPN_TILE.x + VPN_TILE.w - 24, cy - 3, 'vt-ip', 'end', r.ip));
+
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('class', 'vt-dot');
+      dot.setAttribute('cx', VPN_TILE.x + VPN_TILE.w - 15);
+      dot.setAttribute('cy', cy + 12);
+      dot.setAttribute('r', 3);
+      grp.appendChild(dot);
+
+      // 悬浮提示放弹窗里才有的细节：设备、账号、对端公网、上线时间
+      const tip = document.createElementNS(SVG_NS, 'title');
+      const devs = (meta.dev || []).map((d) => d.name + ' ' + d.ip).join('、');
+      tip.textContent = name + '\n'
+        + (meta.gw ? '网关 ' + meta.gw : '网关未登记') + (meta.lan ? ' · 网段 ' + meta.lan : '') + '\n'
+        + (devs ? '网段内 ' + devs + '\n' : '')
+        + (on
+          ? `账号 ${r.c.user || '—'} · 对端 ${r.c.peer || '—'}${r.c.port ? ':' + r.c.port : ''}`
+            + (r.c.since ? ` · 自 ${r.c.since}` : '')
+          : '当前离线');
+      grp.appendChild(tip);
+
+      grp.addEventListener('click', openVpnModal);
+      g.appendChild(grp);
+    });
+  }
+
+  function renderVPN(vpn) {
+    const block = $('vpnBlock');
+    if (!block) return;
+    const srv = (vpn && vpn.server) || { online: 0, clients: [] };
+    const links = (vpn && vpn.links) || [];
+    if (!vpn || (!srv.online && !links.length)) { block.hidden = true; }
+    else block.hidden = false;
+
+    // 拨入行：站点名比账号名有用得多（谁在哪儿拨进来的，一眼就认出来了）
+    const rows = vpnSiteRows(vpn);
+    const onlineRows = rows.filter((r) => r.c);
+    const sEl = $('vpnSrv');
+    if (sEl && !block.hidden) {
+      if (!onlineRows.length) {
+        sEl.innerHTML = '<b>0</b> 站点在线';
+      } else if (onlineRows.length === 1) {
+        const r = onlineRows[0];
+        const nm = r.meta.short || r.meta.name || (r.c.user || '未知站点');
+        sEl.innerHTML = `<b>1</b> 在线 · ${esc(nm)} <i>${esc(r.ip)}</i>`;
+      } else {
+        const nm = onlineRows.map((r) => r.meta.short || r.meta.name || (r.c.user || r.ip));
+        sEl.innerHTML = `<b>${onlineRows.length}</b> 站点 · ${esc(nm.join('·'))}`;
+      }
+      sEl.title = rows.map((r) => {
+        const nm = r.meta.name || r.meta.short || (r.c && r.c.user) || r.ip;
+        return `${nm}  ${r.ip}`
+          + (r.c && r.c.peer ? ` ← ${r.c.peer}` : '')
+          + (r.c ? (r.c.since ? `  · 自 ${r.c.since}` : '  · 在线') : '  · 离线');
+      }).join('\n') + '\n\n点击查看三个站点的隧道拓扑';
+    }
+
+    const lEl = $('vpnCli');
+    if (lEl) {
+      const ordered = links.slice().sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
+      lEl.innerHTML = ordered.length
+        ? ordered.map((l) => `${l.iface} <em class="${l.ok ? 'ok' : 'bad'}">${l.ok ? (l.ip && l.ip !== '--' ? l.ip : '已连接') : (l.msg || '断开')}</em>`).join(' · ')
+        : '<span style="color:var(--txt-3)">无拨出隧道</span>';
+    }
+
+    // 弹窗开着的时候顺带跟着刷新，不用关掉再点开
+    const modal = $('vpnModal');
+    if (modal && modal.classList.contains('open')) fillVpnModal(vpn);
+  }
+
+  /* 弹窗：一个站点一张小拓扑（站点 → 加密隧道 → iKuai 服务端） */
+  function fillVpnModal(vpn) {
+    const rows = vpnSiteRows(vpn);
+    const srv = (vpn && vpn.server) || { clients: [] };
+    const links = (vpn && vpn.links) || [];
+    const onCount = rows.filter((r) => r.c).length;
+
+    const sub = $('vpnModalSub');
+    if (sub) {
+      sub.textContent = `${onCount}/${rows.length} 站点在线 · OVPN 加密隧道`
+        + (links.length ? ` · 拨出 ${links.filter((l) => l.ok).length}/${links.length}` : '');
+    }
+
+    const box = $('vpnSites');
+    if (box) box.innerHTML = rows.map(vpnCard).join('');
+
+    const outBox = $('vpnOutBox');
+    const outHint = $('vpnOutHint');
+    if (outHint) outHint.textContent = links.length ? `${links.filter((l) => l.ok).length} / ${links.length} 条在线` : '未配置';
+    if (outBox) {
+      outBox.innerHTML = links.length
+        ? links.map((l) => `<div class="vo-card ${l.ok ? 'ok' : 'bad'}">
+            <span class="vo-if">${esc(l.iface)}</span>
+            <span class="vo-ar">→</span>
+            <span class="vo-ip">${esc(l.ip && l.ip !== '--' ? l.ip : '—')}</span>
+            <span class="vo-gw">网关 ${esc(l.gateway || '—')}</span>
+            <span class="vo-st">${esc(l.ok ? (l.msg || '已连接') : (l.msg || '拨号失败'))}</span>
+          </div>`).join('')
+        : '<div class="vo-empty">没有拨出隧道</div>';
+    }
+  }
+
+  function vpnCard(row) {
+    const c = row.c;
+    const meta = row.meta || {};
+    const ip = row.ip || '—';
+    const name = meta.name || (c && c.user ? c.user + ' 拨入' : (c ? '未登记站点' : '未知站点'));
+    const peer = c && c.peer ? c.peer : '';
+    const port = c && c.port ? ':' + c.port : '';
+    const since = c && c.since ? '自 ' + c.since : '';
+    const up = c && c.up_total ? fmtBytes(c.up_total) : '';
+    const down = c && c.down_total ? fmtBytes(c.down_total) : '';
+
+    // 站点侧：拨号的那台路由器 + 它的内网网段 + 网段里的其他设备（配置里没写就留空）
+    const router = meta.router || '';
+    const lan = meta.lan || '';
+    const gw = meta.gw || '';
+    const devs = meta.dev || [];
+
+    // 左框三行：路由器 / 网关 / 网段；网关没登记就只写网段两行，别硬编 .1
+    const hasGw = !!gw;
+    const l1 = router || (c ? 'VPN 客户端' : '站点');
+    const l2 = hasGw ? gw : lan;
+    const l3 = hasGw ? lan : '';
+    const y1 = hasGw ? 31 : 40;
+    const y2 = hasGw ? 49 : 58;
+    const y3 = 67;
+
+    const svg = `<svg class="vs-svg" viewBox="0 0 360 96" preserveAspectRatio="xMidYMid meet">
+      <rect class="vs-box" x="2" y="6" width="128" height="76" rx="10"></rect>
+      <text class="vs-t" x="66" y="${y1}">${esc(l1)}</text>
+      <text class="vs-gw" x="66" y="${y2}">${esc(l2)}</text>
+      ${l3 ? `<text class="vs-lan" x="66" y="${y3}">${esc(l3)}</text>` : ''}
+      <path class="vs-lnk" d="M130,44 H230"></path>
+      <path class="vs-arw" d="M223,39.5 L230,44 L223,48.5"></path>
+      <text class="vs-ip" x="180" y="33">${esc(ip)}</text>
+      <text class="vs-lbl" x="180" y="70">加密隧道</text>
+      <rect class="vs-box" x="230" y="6" width="128" height="76" rx="10"></rect>
+      <text class="vs-t" x="294" y="40">iKuai 主路由</text>
+      <text class="vs-s" x="294" y="58">OVPN 加密隧道</text>
+    </svg>`;
+
+    const bits = [];
+    if (peer) bits.push(`<span class="vm-peer">${esc(peer + port)}</span>`);
+    if (since) bits.push(`<span>${esc(since)}</span>`);
+    if (up || down) bits.push(`<span class="vm-tr">↑ ${esc(up || '0')} · ↓ ${esc(down || '0')}</span>`);
+    else bits.push('<span class="vm-tr dim">无流量统计</span>');
+
+    // 网段里的其他设备：只写主机位（网段已经在框里了），完整地址放悬浮提示。
+    // 没有别的设备也留这一行，三张卡的结构才对齐、高度才一致
+    const devLine = `<div class="vs-dev"><span class="vs-dev-k">网段内</span>${devs.length
+      ? devs.map((d) => {
+        const tail = d.ip ? '.' + String(d.ip).split('.').pop() : '';
+        return `<span class="vs-dev-i" title="${esc(d.ip || '')}">${esc(d.name)} <b>${esc(tail)}</b></span>`;
+      }).join('')
+      : '<span class="vs-dev-none">无其他设备</span>'}</div>`;
+
+    return `<div class="vs-card ${c ? 'on' : 'off'}">
+      <div class="vs-top">
+        <span class="vs-dot"></span>
+        <span class="vs-name">${esc(name)}</span>
+        <span class="vs-badge">${c ? '在线' : '离线'}</span>
+      </div>
+      ${svg}
+      ${devLine}
+      <div class="vs-meta">${bits.join('')}</div>
+    </div>`;
+  }
+
+  function openVpnModal() {
+    const modal = $('vpnModal');
+    if (!modal) return;
+    fillVpnModal(state.snap ? state.snap.vpn : null);
+    modal.classList.add('open');
+  }
+
+  function closeVpnModal() {
+    const modal = $('vpnModal');
+    if (modal) modal.classList.remove('open');
   }
 
   /* ---------------- 无线覆盖 ---------------- */
@@ -710,19 +1268,41 @@
       const chs = (a.channels || []).map((c) =>
         `<span class="${c.ch ? 'hot' : ''}">${c.band} ch${c.ch || '?'}</span>`).join('');
       const extra = [
-        a.firmware ? `<span>${a.firmware}</span>` : '',
-        a.locale ? `<span>${a.locale}</span>` : '',
         a.uplink ? `<span>${a.uplink === 'wired' ? '有线回程' : a.uplink}</span>` : '',
       ].join('');
-      return `<div class="ap-item ${a.ok ? '' : 'off'}">
+      // 每台 AP 带上前几台终端，无线面板才看得出挂了什么设备 —— 光写「10 台」没有信息量。
+      // 只放 2 台 + 「还有 N 台」，四台 AP 才能在一屏里排完不用滚；SSID 收进 title。
+      const cls = (a.clients || []).slice().sort((x, y) => (y.signal || -999) - (x.signal || -999));
+      const show = cls.slice(0, 2);
+      const rest = cls.length - show.length;
+      const listHtml = show.length
+        ? `<div class="ap-cl">${show.map((c) => {
+            const sig = c.signal > -50 ? 's3' : c.signal > -65 ? 's2' : 's1';
+            return `<span class="ap-c" title="${esc(c.name || c.mac)} · ${c.ip} · ${c.dev} ${c.signal || ''}dBm">
+              <i class="${sig}"></i><span class="ap-cn">${esc(c.name || c.mac)}</span>
+              <em>${c.signal ? c.signal + 'dBm' : ''}</em></span>`;
+          }).join('')}${rest > 0 ? `<span class="ap-c more">还有 ${rest} 台接入</span>` : ''}</div>`
+        : '<div class="ap-cl"><span class="ap-c more">当前没有终端接入</span></div>';
+      return `<div class="ap-item ${a.ok ? '' : 'off'}" title="${esc(a.ssid || '')}">
         <div class="ap-top">
           ${icon('ap').replace('<svg>', '<svg class="ap-ico">')}
           <span class="ap-nm">${a.label} · ${a.model}</span>
           <span class="ap-cnt ${a.online ? '' : 'sp'}">${a.ok ? a.online + ' 台' : '离线'}</span>
         </div>
-        <div class="ap-meta">${chs}${extra}</div>
+        ${extra ? `<div class="ap-meta">${extra}</div>` : ''}
+        ${listHtml}
       </div>`;
     }).join('');
+
+    const foot = $('apFoot');
+    if (foot) {
+      const apsOk = aps.filter((a) => a.ok).length;
+      const cli = aps.reduce((n, a) => n + (a.online || 0), 0);
+      const weak = aps.reduce((n, a) => n + (a.clients || []).filter((c) => c.signal && c.signal < -70).length, 0);
+      foot.innerHTML = `<span>${apsOk}/${aps.length} 台 AP 在线</span>`
+        + `<span>${cli} 台终端</span>`
+        + (weak ? `<span style="color:var(--warn)">${weak} 台信号弱</span>` : '<span>信号均良好</span>');
+    }
   }
 
   function renderProbes(list) {
@@ -762,15 +1342,152 @@
     const key = (pve.guests || []).map((g) => g.vmid + g.status + Math.round((g.cpu || 0)) + Math.round((g.netin + g.netout) / 4096)).join('|');
     if (key === state.vmKey) return;
     state.vmKey = key;
-    $('vmList').innerHTML = (pve.guests || []).map((g) => {
+    renderVmTable(pve);
+  }
+
+  // 算力页的虚拟机全表：原来右栏只挤了「名字 + 流量」，这里把 CPU / 内存 / 磁盘 / 运行时长
+  // 一起摊开。PVE 的 guests 本来就有这些字段，之前是没地方放。
+  function renderVmTable(pve) {
+    const box = $('vmTable');
+    if (!box) return;
+    const gs = pve.guests || [];
+    const running = gs.filter((g) => g.status === 'running').length;
+    const hint = $('vmHint');
+    if (hint) hint.textContent = `${running}/${gs.length} 运行中`;
+    const note = $('compNote');
+    if (note) {
+      note.innerHTML = `${esc(pve.model || '—')}<br>${esc(pve.kernel || '—')}`
+        + `<br>交换 ${(pve.swap_used / 1e9).toFixed(1)}/${(pve.swap_total / 1e9).toFixed(1)} GB`
+        + ` · 运行 ${fmtDur(pve.uptime)}`;
+    }
+    if (!gs.length) {
+      box.innerHTML = '<div class="wall-empty">没有读到虚拟机</div>';
+      return;
+    }
+    box.innerHTML = gs.map((g) => {
+      const memPct = g.maxmem ? (g.mem / g.maxmem * 100) : 0;
       const net = (g.netin || 0) + (g.netout || 0);
-      return `<li class="${g.status === 'running' ? '' : 'stopped'}">
-        <span class="vdot"></span>
-        <span class="vmid">${g.vmid}</span>
-        <span class="vname">${g.name}</span>
-        <span class="vnet">${net > 1024 ? fmtRate(net) : '—'}</span>
-      </li>`;
+      const stopped = g.status !== 'running';
+      return `<div class="vmt-row ${stopped ? 'stopped' : ''}">
+        <span class="vt-id">${g.vmid}</span>
+        <span class="vt-name" title="${esc(g.name || '')}"><i></i>${esc(VM_NAMES[g.vmid] || g.name || '—')}</span>
+        <span class="vt-kind">${g.kind === 'lxc' ? 'CT' : 'VM'}</span>
+        <span class="vt-num vt-cpu">${stopped ? '—' : (g.cpu || 0).toFixed(1) + '%'}</span>
+        <span class="vmt-mem">
+          <span>${(g.mem / 1e9).toFixed(2)} / ${(g.maxmem / 1e9).toFixed(1)}G · ${memPct.toFixed(0)}%</span>
+          <span class="g-bar"><i style="width:${Math.min(memPct, 100)}%"></i></span>
+        </span>
+        <span class="vt-num">${g.maxdisk ? (g.maxdisk / 1e9).toFixed(0) + 'G' : '—'}</span>
+        <span class="vt-net ${net > 1024 ? '' : 'zero'}">${stopped ? '—' : (net > 1024 ? fmtRate(net) : '空闲')}</span>
+        <span class="vt-up">${stopped ? '已停' : fmtDur(g.uptime || 0)}</span>
+      </div>`;
     }).join('');
+  }
+
+  /* 爱快主路由：路由器也是台机器，CPU / 内存 / 会话同样算算力。
+     版式跟 PVE 一样，多两样路由器才有的东西：每核占用、双 WAN 实时速率。 */
+  let _ikCoreKey = '';
+  let _ikStatKey = '';
+  // 爱快网口名太技术，面板上换成一眼能懂的说法（未登记的照原样显示）
+  const SEG_LABEL = {
+    lan1: 'LAN1', vlanwuxian: '无线段', vlanyouxian: '有线段',
+    vlanwan: 'WAN 段', sovpn: 'VPN 隧道',
+  };
+
+  function renderIkuai(ik, ifaces, wc) {
+    if (!ik) return;
+    const cpu = ik.cpu || 0;
+    const memPct = ik.mem_used_pct || 0;
+    $('ikCpu').textContent = cpu.toFixed(0) + '%';
+    $('ikMem').textContent = memPct.toFixed(0) + '%';
+    setBar($('ikCpuBar'), cpu);
+    setBar($('ikMemBar'), memPct);
+
+    const totalGb = (ik.mem_total_kb || 0) / 1048576;
+    const usedGb = (ik.mem_used_kb || 0) / 1048576;
+    const cores = ik.cpu_cores || [];
+    $('ikUptime').textContent = cores.length ? cores.length + ' 核' : '';
+    $('ikBadge').textContent = cpu > 0 ? '在线' : '空闲';
+    $('ikMeta').textContent = `${usedGb.toFixed(1)} / ${totalGb.toFixed(0)} GB`
+      + ` · ${ik.online || 0} 台在线 · ${(ik.conn_total || 0).toLocaleString()} 会话`
+      + ` · 运行 ${fmtDur(ik.uptime)}`;
+
+    // 每核柱子：数值没变就不重建，否则每 2 秒把柱子的过渡动画打断一次
+    const ck = cores.map((c) => Math.round(c)).join(',');
+    const cbox = $('ikCores');
+    if (cbox) {
+      if (!cores.length) {
+        cbox.innerHTML = '<span class="ik-empty">未上报核心占用</span>';
+      } else if (ck !== _ikCoreKey) {
+        _ikCoreKey = ck;
+        // 每核一个数字块：路由常年个位数占用，细条画出来几乎看不见，数字反而直观
+        cbox.innerHTML = cores.map((c, i) => {
+          return `<span class="ik-core${c > 85 ? ' hot' : ''}" title="核心 ${i + 1} · ${c.toFixed(1)}%">`
+            + `<span class="ik-ck">核 ${i + 1}</span>`
+            + `<em>${c.toFixed(0)}%</em></span>`;
+        }).join('');
+      }
+      $('ikPeak').textContent = cores.length
+        ? '峰值 ' + Math.max.apply(null, cores).toFixed(0) + '%' : '—';
+    }
+
+    // 四格：会话 / 终端 / 累计收发。累计是"这次开机以来"，重启会归零
+    const stats = [
+      ['会话总数', (ik.conn_total || 0).toLocaleString(), `TCP ${ik.conn_tcp || 0} · UDP ${ik.conn_udp || 0}`],
+      ['在线终端', (ik.online || 0) + ' 台', `有线 ${ik.online_wired || 0} · 无线 ${ik.online_wireless || 0}`],
+      ['累计上行', fmtBytes(ik.up_total), '本次运行'],
+      ['累计下行', fmtBytes(ik.down_total), '本次运行'],
+    ];
+    const sk = stats.map((s) => s.join('|')).join('~');
+    if (sk !== _ikStatKey && $('ikStats')) {
+      _ikStatKey = sk;
+      $('ikStats').innerHTML = stats.map((s) => `<div class="iks">
+        <span class="k">${s[0]}</span><b class="v">${esc(s[1])}</b><span class="n">${esc(s[2])}</span>
+      </div>`).join('');
+    }
+
+    // 双 WAN：每条线各自 IP + 实时速率，断线直接标红
+    const f = ifaces || {};
+    const lines = (wc && wc.lines) || [];
+
+    // 内网各网段：有线段 / 无线段 / 隧道各跑了多少，从路由器角度看谁在吃带宽
+    const segs = Object.keys(f).filter((k) => /^(lan\d|vlan)/.test(k)).map((k) => ({
+      name: SEG_LABEL[k] || k,
+      ip: (f[k] || {}).ip || '—',
+      up: (f[k] || {}).up || 0,
+      down: (f[k] || {}).down || 0,
+    }));
+    const sbox = $('ikSegs');
+    if (sbox) {
+      sbox.innerHTML = segs.length ? segs.map((s) => `<div class="ik-seg">
+        <span class="ik-sn">${esc(s.name)}</span>
+        <span class="ik-sip">${esc(s.ip)}</span>
+        <span class="ik-sw">↑ ${fmtRateShort(s.up)} · ↓ ${fmtRateShort(s.down)}</span>
+      </div>`).join('') : '<span class="ik-empty">未读到网段</span>';
+      $('ikSegNote').textContent = segs.length ? segs.length + ' 个' : '';
+    }
+
+    const wbox = $('ikWans');
+    if (wbox) {
+      const keys = ['wan1', 'wan2'];
+      let td = 0, tu = 0;
+      wbox.innerHTML = keys.map((k, i) => {
+        const it = f[k] || {};
+        const lm = lines.filter((l) => l.iface === k)[0] || {};
+        const bad = lm.ok === false;
+        td += it.down || 0; tu += it.up || 0;
+        return `<div class="ik-wan${bad ? ' bad' : ''}">
+          <span class="wan2-tag">WAN${i + 1}</span>
+          <span class="ik-wip">${esc(it.ip || lm.ip || '—')}</span>
+          ${bad ? '<span class="ik-wbad">断线</span>' : ''}
+          <span class="ik-wr">↑ ${fmtRateShort(it.up)} · ↓ ${fmtRateShort(it.down)}</span>
+        </div>`;
+      }).join('');
+      $('ikSum').textContent = '↓ ' + fmtRateShort(td) + ' · ↑ ' + fmtRateShort(tu);
+    }
+
+    $('ikNote').innerHTML = `数据源 爱快 sysstat / monitor_iface<br>`
+      + `会话表 ${(ik.conn_total || 0).toLocaleString()} 条 · 每 15 秒刷新`;
   }
 
   function setBar(el, pct) {
@@ -807,36 +1524,510 @@
     }).join('');
   }
 
-  /* ---------------- 终端墙 ---------------- */
-  function renderWall(devices, summary) {
-    // stale / ikuai_seen 变化也要重画，否则格子会停在旧状态
-    const key = state.filter + '#' + devices.map((d) => d.ip + (d.stale ? '~' : '') + (d.ikuai_seen === false ? '?' : '')).join(',');
-    if (key === state.wallKey) return;
-    state.wallKey = key;
+  /* ---------------- 事件历史（飞牛本地库回溯） ---------------- */
+  const HIST = { hours: 24, level: '', q: '', rows: [], timer: null };
+  const LV_LABEL = { info: '信息', warn: '告警', crit: '严重' };
 
+  function histDay(t) {
+    const d = new Date(t * 1000);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function histHM(t) {
+    const d = new Date(t * 1000);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function openHistory() {
+    $('hist').classList.add('open');
+    loadHistory();
+  }
+
+  function closeHistory() {
+    $('hist').classList.remove('open');
+  }
+
+  async function loadHistory() {
+    const qs = new URLSearchParams({
+      limit: '400', hours: String(HIST.hours), level: HIST.level, q: HIST.q,
+    });
+    let rows = [];
+    try {
+      const r = await fetch('/api/events/history?' + qs.toString());
+      rows = await r.json();
+    } catch (e) { rows = []; }
+    HIST.rows = Array.isArray(rows) ? rows : [];
+    renderHist();
+    loadTrend();
+    loadStoreMeta();
+  }
+
+  function renderHist() {
+    const ul = $('histList');
+    if (!HIST.rows.length) {
+      ul.innerHTML = '<li class="hist-empty">这个范围里没有事件</li>';
+      return;
+    }
+    // 按天分组：一天一个小标题，往下才是事件行
+    const cnt = {};
+    HIST.rows.forEach((e) => { const k = histDay(e.t); cnt[k] = (cnt[k] || 0) + 1; });
+    let prev = '';
+    const html = [];
+    for (const e of HIST.rows) {
+      const k = histDay(e.t);
+      if (k !== prev) {
+        const d = new Date(e.t * 1000);
+        html.push(`<li class="hist-day"><span>${k} ${WEEK[d.getDay()]}</span><i>${cnt[k]} 条</i></li>`);
+        prev = k;
+      }
+      const lv = e.level || 'info';
+      html.push(`<li class="hist-row ${lv}">
+        <span class="hr-t">${histHM(e.t)}</span>
+        <span class="hr-lv">${LV_LABEL[lv] || lv}</span>
+        <span class="hr-x">${esc(e.text)}</span>
+        <span class="hr-d" title="${esc(e.detail || '')}">${esc(e.detail || '')}</span>
+      </li>`);
+    }
+    ul.innerHTML = html.join('');
+  }
+
+  async function loadTrend() {
+    const step = HIST.hours <= 24 ? 300 : HIST.hours <= 168 ? 1800 : 7200;
+    let rows = [];
+    try {
+      const r = await fetch(`/api/metrics?hours=${HIST.hours}&step=${step}`);
+      rows = await r.json();
+    } catch (e) { rows = []; }
+    drawHistChart(Array.isArray(rows) ? rows : []);
+    const span = $('histTrendSpan');
+    if (span) {
+      span.textContent = HIST.hours <= 24 ? '近 24 小时' : HIST.hours <= 168 ? '近 7 天' : '近 30 天';
+    }
+    const note = $('histTrendNote');
+    if (note) {
+      const peak = (rows || []).reduce((m, r) => Math.max(m, (r.down || 0) + (r.up || 0)), 0);
+      note.textContent = rows && rows.length ? `峰值 ${fmtRate(peak)} · ${rows.length} 个采样点` : '还没有采样数据';
+    }
+  }
+
+  async function loadStoreMeta() {
+    try {
+      const r = await fetch('/api/store');
+      const s = await r.json();
+      const foot = $('histFoot');
+      const meta = $('histMeta');
+      if (!s.ok) {
+        if (foot) foot.textContent = '事件库未启用，只保留本次运行的实时事件';
+        if (meta) meta.textContent = '未连接本地库';
+        return;
+      }
+      const kb = (s.bytes || 0) / 1024;
+      const size = kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb.toFixed(0) + ' KB';
+      if (foot) {
+        foot.textContent = `库内共 ${s.events.toLocaleString()} 条事件 · ${s.metrics.toLocaleString()} 个指标采样 · ${s.path} · ${size}`;
+      }
+      if (meta) {
+        const since = s.since ? new Date(s.since * 1000) : null;
+        meta.textContent = since
+          ? `最早记录 ${since.getFullYear()}-${pad(since.getMonth() + 1)}-${pad(since.getDate())} · 当前范围 ${HIST.rows.length} 条`
+          : `当前范围 ${HIST.rows.length} 条`;
+      }
+    } catch (e) { /* 忽略 */ }
+  }
+
+  /* ---------------- 算力页：CPU / 内存 24 小时趋势 ---------------- */
+  // 指标表里每分钟存了 cpu / mem，这里按 15 分钟聚合画出来。
+  // 单看一个「2%」判断不了是常态还是异常，有曲线才知道。
+  const PVE_TREND = { rows: [], at: 0 };
+
+  async function loadPveTrend(force) {
+    const now = Date.now();
+    if (!force && now - PVE_TREND.at < 60000) { drawPveChart(); return; }
+    PVE_TREND.at = now;
+    try {
+      const r = await fetch('/api/metrics?hours=24&step=900');
+      PVE_TREND.rows = (await r.json()) || [];
+    } catch (e) {
+      PVE_TREND.rows = [];
+    }
+    drawPveChart();
+  }
+
+  function drawPveChart() {
+    const cv = $('pveChart');
+    if (!cv) return;
+    drawIkChart();
+    const rows = PVE_TREND.rows || [];
+    const ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || 300;
+    // 高度跟着面板走：算力页把趋势图撑满了卡片（CSS 里是 flex:1）
+    const h = cv.clientHeight || 118;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const note = $('pveTrendNote');
+    if (note) note.textContent = rows.length ? rows.length + ' 个采样' : '采样不足';
+
+    // 纵轴固定 0-100%，CPU 常年个位数会贴在底下看不见，
+    // 所以图例里带上当前值和峰值，曲线看形状、数字看量级
+    if (rows.length) {
+      const last = rows[rows.length - 1];
+      const peak = Math.max(...rows.map((r) => r.cpu || 0));
+      const lc = $('ptlCpu'), lm = $('ptlMem'), lp = $('ptlPeak');
+      if (lc) lc.textContent = 'CPU ' + (last.cpu || 0).toFixed(1) + '%';
+      if (lm) lm.textContent = '内存 ' + (last.mem || 0).toFixed(0) + '%';
+      if (lp) lp.textContent = 'CPU 峰值 ' + peak.toFixed(0) + '% · 内存峰值 '
+        + Math.max(...rows.map((r) => r.mem || 0)).toFixed(0) + '%';
+    }
+
+    if (rows.length < 2) {
+      ctx.fillStyle = cssVar('--txt-3');
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('采样还不够，跑一段时间就有曲线', w / 2, h / 2 + 3);
+      return;
+    }
+
+    const padL = 4, padR = 4, padT = 8, padB = 14;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const X = (i) => padL + iw * i / (rows.length - 1);
+    const Y = (v) => padT + ih * (1 - Math.min(1, Math.max(0, v || 0) / 100));
+
+    // 纵轴固定 0-100%，三条参考线对应 0 / 50 / 100
+    ctx.strokeStyle = cssVar('--grid-line');
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 2; i++) {
+      const yy = padT + ih * i / 2;
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
+    }
+
+    const area = (key, color) => {
+      ctx.beginPath();
+      rows.forEach((r, i) => {
+        const px = X(i), py = Y(r[key]);
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.lineTo(X(rows.length - 1), padT + ih);
+      ctx.lineTo(X(0), padT + ih);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, padT, 0, padT + ih);
+      g.addColorStop(0, alpha(color, 0.22));
+      g.addColorStop(1, alpha(color, 0));
+      ctx.fillStyle = g;
+      ctx.fill();
+    };
+    area('mem', cssVar('--violet'));
+    area('cpu', cssVar('--cyan'));
+
+    // 首尾时间
+    const fmt = (t) => {
+      const d = new Date(t * 1000);
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    ctx.fillStyle = cssVar('--txt-3');
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(fmt(rows[0].t), padL, h - 3);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmt(rows[rows.length - 1].t), w - padR, h - 3);
+  }
+
+  // 路由卡底部的小走势：近 24 小时双线带宽。和 PVE 趋势同一批采样（/api/metrics），
+  // 不额外打接口。路由器是全网流量的唯一入口，这张图才是它真正的负载。
+  function drawIkChart() {
+    const cv = $('ikChart');
+    if (!cv) return;
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    if (!w || !h) return;
+    const rows = (PVE_TREND.rows || []).filter((r) => r.down || r.up);
+    const ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const note = $('ikTrendNote');
+    if (rows.length < 2) {
+      if (note) note.textContent = '采样不足';
+      ctx.fillStyle = cssVar('--txt-3');
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('攒够采样后显示走势', w / 2, h / 2 + 3);
+      return;
+    }
+
+    const dmax = Math.max.apply(null, rows.map((r) => r.down || 0));
+    const umax = Math.max.apply(null, rows.map((r) => r.up || 0));
+    const top = Math.max(dmax, umax, 1024);        // 全静默时也别除零
+    const padL = 2, padR = 2, padT = 8, padB = 6;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const X = (i) => padL + iw * i / (rows.length - 1);
+    const Y = (v) => padT + ih * (1 - Math.min(1, (v || 0) / top));
+
+    const trace = (key) => {
+      ctx.beginPath();
+      rows.forEach((r, i) => {
+        const px = X(i), py = Y(r[key]);
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+    };
+
+    // 下行：面积压在下面（量级最大，作为背景）
+    trace('down');
+    ctx.lineTo(X(rows.length - 1), h - padB);
+    ctx.lineTo(X(0), h - padB);
+    ctx.closePath();
+    ctx.fillStyle = alpha(cssVar('--cyan'), 0.13);
+    ctx.fill();
+
+    trace('down');
+    ctx.strokeStyle = cssVar('--cyan');
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    trace('up');
+    ctx.strokeStyle = cssVar('--ok');
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    if (note) {
+      note.textContent = '峰值 ↓ ' + fmtRateShort(dmax) + ' · ↑ ' + fmtRateShort(umax);
+    }
+  }
+
+  function drawHistChart(rows) {
+    const cv = $('histChart');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || 620;
+    const h = 84;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    if (!rows || rows.length < 2) {
+      ctx.fillStyle = cssVar('--txt-3');
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('采样数据还不够，跑一段时间就有曲线了', w / 2, h / 2 + 3);
+      return;
+    }
+
+    const padL = 4, padR = 4, padT = 8, padB = 13;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const maxV = Math.max(1, ...rows.map((r) => Math.max(r.down || 0, r.up || 0)));
+    const X = (i) => padL + iw * i / (rows.length - 1);
+    const Y = (v) => padT + ih * (1 - Math.min(1, (v || 0) / maxV));
+
+    ctx.strokeStyle = cssVar('--grid-line');
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 2; i++) {
+      const yy = padT + ih * i / 2;
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
+    }
+
+    const line = (key, color) => {
+      ctx.beginPath();
+      rows.forEach((r, i) => {
+        const px = X(i), py = Y(r[key]);
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.6;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.lineTo(X(rows.length - 1), padT + ih);
+      ctx.lineTo(X(0), padT + ih);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, padT, 0, padT + ih);
+      g.addColorStop(0, alpha(color, 0.2));
+      g.addColorStop(1, alpha(color, 0));
+      ctx.fillStyle = g;
+      ctx.fill();
+    };
+    line('down', cssVar('--cyan'));
+    line('up', cssVar('--ok'));
+
+    // 左中右三个时间刻度
+    ctx.fillStyle = cssVar('--txt-3');
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textBaseline = 'top';
+    const marks = [0, Math.floor(rows.length / 2), rows.length - 1];
+    marks.forEach((i, n) => {
+      const d = new Date(rows[i].t * 1000);
+      const label = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      ctx.textAlign = n === 0 ? 'left' : n === 2 ? 'right' : 'center';
+      ctx.fillText(label, X(i), h - 11);
+    });
+  }
+
+  /* ---------------- 终端统计条 ---------------- */
+  // 底部那条：总数 + 分类分布 + 掉线数。点分类直接跳终端页并筛好，不用先跳再点。
+  function renderSummary(summary) {
+    const s = summary || {};
+    const on = $('sumOnline'), kn = $('sumKnown'), off = $('sumOffline');
+    if (on) on.textContent = s.online != null ? s.online : '—';
+    if (kn) kn.textContent = s.known != null ? '/' + s.known + ' 台' : '';
+    if (off) {
+      off.innerHTML = s.offline ? `离线 <b>${s.offline}</b>` : '全部在线';
+      off.style.color = s.offline ? '' : 'var(--ok)';
+    }
+
+    const box = $('sumCats');
+    if (!box) return;
+    const by = s.by_cat || {};
+    const key = CAT_ORDER.map((c) => c + (by[c] || 0)).join(',');
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.innerHTML = CAT_ORDER.map((c) => {
+      const n = by[c] || 0;
+      if (!n) return '';
+      return `<button class="sumcat" data-cat="${c}" title="只看${CAT_LABEL[c]}">
+        <i style="background:${CAT_COLOR[c]}"></i>${CAT_LABEL[c]}<b>${n}</b></button>`;
+    }).join('');
+    box.querySelectorAll('.sumcat').forEach((b) => {
+      b.addEventListener('click', () => {
+        setView('clients');
+        const active = document.querySelector('#wallFilter .wf[data-cat="' + b.dataset.cat + '"]');
+        if (active) active.click();
+      });
+    });
+
+    const tn = $('tabCliN');
+    if (tn) tn.textContent = s.online != null ? String(s.online) : '';
+    const tw = $('tabNetN');
+    if (tw) {
+      const sw = (state.snap || {}).switch || {};
+      tw.textContent = sw.total_ports ? sw.up_count + '/' + sw.total_ports : '';
+    }
+  }
+
+  /* ---------------- 终端墙 ---------------- */
+  // 站点网段判断：10.8.8.x 是隧道地址，192.168.10/200.0/24 是站点内网。
+  // iKuai 对这类跨站终端只给个 IP，名字全是 Unknown，卡片上得自己补。
+  function cidrHas(cidr, ip) {
+    const p = String(cidr || '').split('/');
+    if (p.length < 2) return false;
+    const toInt = (s) => String(s).split('.').reduce((n, x) => (n << 8) + (parseInt(x, 10) || 0), 0) >>> 0;
+    const bits = parseInt(p[1], 10);
+    if (!bits) return false;
+    const mask = bits >= 32 ? 0xffffffff : ((0xffffffff << (32 - bits)) >>> 0);
+    return (toInt(ip) & mask) === (toInt(p[0]) & mask);
+  }
+
+  function devLabel(d) {
+    const raw = String(d.display || '').trim();
+    if (raw && !/^(unknown|未知设备|未知终端|—)$/i.test(raw)) return raw;
+    const sites = state.vpnSites || {};
+    for (const key of Object.keys(sites)) {
+      const s = sites[key] || {};
+      const hit = (s.dev || []).filter((x) => x.ip === d.ip)[0];
+      if (hit) return (s.short || s.name) + ' · ' + hit.name;
+      if (d.ip === key) return (s.short || s.name) + (d.user ? ' · ' + d.user : '');
+      if (s.lan && cidrHas(s.lan, d.ip)) return (s.short || s.name) + ' 内网设备';
+    }
+    return '未知终端';
+  }
+
+  // 卡片第三行：接在哪 / 是什么 + 当前速率（速率每轮重画，其它字段随列表重建）
+  const PPP_LABEL = { ovpn: 'OpenVPN 拨入', pptp: 'PPTP 拨入', l2tp: 'L2TP 拨入', dhcp: 'DHCP' };
+
+  function devMeta(d) {
+    if (d.stale) return '刚失去在线信号';
+    if (d.ikuai_seen === false) return 'iKuai 未上报 · 探测可达';
+    const bits = [];
+    if (d.wifi_ap) bits.push(d.wifi_ap + (d.wifi_band ? ' ' + d.wifi_band : ''));
+    else if (d.ppp) bits.push(PPP_LABEL[d.ppp] || d.ppp.toUpperCase());
+    else if (d.iface) bits.push('有线');
+    // 有实时流量时优先显示速率，位置信息让位（完整信息在悬浮提示和详情里）
+    const rate = Math.max(d.down || 0, d.up || 0);
+    if (rate > 1024) {
+      bits.push((d.down >= d.up ? '↓ ' : '↑ ') + fmtRateShort(rate));
+    } else if (!d.wifi_ap && d.zone && d.zone !== '未知') {
+      bits.push(d.zone);
+    }
+    if (!bits.length) bits.push(d.vendor && d.vendor !== 'Unknown' ? d.vendor : '—');
+    return bits.join(' · ');
+  }
+
+  function renderWall(devices, summary) {
     state.devices = {};
     devices.forEach((d) => { state.devices[d.ip] = d; });
 
+    // stale / ikuai_seen 变化也要重画，否则格子会停在旧状态
+    const key = state.filter + '#' + state.wallQ + '#'
+      + devices.map((d) => d.ip + (d.stale ? '~' : '') + (d.ikuai_seen === false ? '?' : '') + (d.display || '')).join(',');
+    if (key !== state.wallKey) {
+      state.wallKey = key;
+      buildWall(devices);
+    }
+    paintRates();
+  }
+
+  // 流量每 2 秒就变，但整堵墙不能跟着重建（会打断 hover、滚动、动画），
+  // 所以只把第三行文字换掉。
+  function paintRates() {
+    const body = $('wallBody');
+    if (!body) return;
+    const cells = body.querySelectorAll('.wall-cell');
+    for (let i = 0; i < cells.length; i++) {
+      const d = state.devices[cells[i].dataset.ip];
+      if (!d) continue;
+      const m = cells[i].querySelector('.wc-meta');
+      const t = devMeta(d);
+      if (m && m.textContent !== t) m.textContent = t;
+    }
+  }
+
+  function buildWall(devices) {
+    const q = state.wallQ.toLowerCase();
     const groups = {};
     CAT_ORDER.forEach((c) => { groups[c] = []; });
     devices.forEach((d) => {
       if (state.filter !== 'all' && d.cat !== state.filter) return;
+      if (q) {
+        const hay = (devLabel(d) + ' ' + (d.display || '') + ' ' + d.ip + ' '
+          + (d.mac || '') + ' ' + (d.name || '') + ' ' + (d.zone || '') + ' '
+          + (d.wifi_ap || '') + ' ' + (d.vendor || '')).toLowerCase();
+        if (hay.indexOf(q) < 0) return;
+      }
       (groups[d.cat] || groups.client).push(d);
     });
 
     const body = $('wallBody');
+    const total = CAT_ORDER.reduce((n, c) => n + groups[c].length, 0);
+    if (!total) {
+      body.innerHTML = `<div class="wall-empty">没有匹配的终端${q ? '：' + esc(state.wallQ) : ''}</div>`;
+      return;
+    }
     body.innerHTML = CAT_ORDER.map((cat) => {
       const list = groups[cat];
       if (!list.length) return '';
       const color = CAT_COLOR[cat];
       const cells = list.map((d) => {
-        const tail = d.ip.split('.').pop();
         // stale = iKuai 列表里刚消失，还在宽限期内；ikuai_seen=false = iKuai 没报但探测可达
         const cls = d.stale ? ' stale' : (d.ikuai_seen === false ? ' unwatched' : '');
         const note = d.stale ? ' · 刚失去在线信号'
           : (d.ikuai_seen === false ? ' · iKuai 未上报，探测可达' : '');
-        return `<div class="wall-cell on${cls}" style="--c:${color}" data-ip="${d.ip}" title="${esc(d.display)} · ${d.ip}${note}">
-          ${icon(d.icon)}<span class="tail">.${tail}</span>
+        const name = devLabel(d);
+        const tip = [name, d.ip, d.mac, d.vendor && d.vendor !== 'Unknown' ? d.vendor : '', note]
+          .filter(Boolean).join(' · ');
+        return `<div class="wall-cell on${cls}" style="--c:${color}" data-ip="${d.ip}" title="${esc(tip)}">
+          <span class="wc-h">${icon(d.icon)}<span class="wc-name">${esc(name)}</span></span>
+          <span class="wc-ip">${esc(d.ip)}</span>
+          <span class="wc-meta">${esc(devMeta(d))}</span>
         </div>`;
       }).join('');
       return `<div class="wall-group">
@@ -881,7 +2072,8 @@
       ['位置', d.zone],
       ['厂商', d.vendor || '—'],
       ['型号', d.model || d.hw || '—'],
-      ['接入方式', d.wifi_ap ? (d.wifi_ap + (d.wifi_band ? ' · ' + d.wifi_band : '')) : '有线 / 未知'],
+      ['接入方式', d.wifi_ap ? (d.wifi_ap + (d.wifi_band ? ' · ' + d.wifi_band : ''))
+        : (d.ppp ? d.ppp.toUpperCase() + ' 拨入' : '有线 / 未知')],
       ['当前下行', fmtRate(d.down)],
       ['当前上行', fmtRate(d.up)],
       ['累计下行', fmtBytes(d.down_total)],
@@ -896,11 +2088,12 @@
     } else if (d.stale) {
       items.push(['在线信号', '刚失去，宽限期内']);
     }
+    if (d.user) items.push(['账号', d.user]);
     $('drawerBody').innerHTML = `
       <div class="dr-head">
         <div class="dr-ico" style="--c:${color}">${icon(d.icon)}</div>
         <div>
-          <h3>${esc(d.display)}</h3>
+          <h3>${esc(devLabel(d))}</h3>
           <p>${d.ip} · ${esc(d.mac)}</p>
         </div>
       </div>
@@ -1135,25 +2328,67 @@
       <div class="ac-list">${rows}</div>`;
   }
 
-  /* ---- 温湿度 ---- */
+  /* ---- 温湿度 / 空气质量 ---- */
+  // 读数按房间给：客厅走 ZM1（MQTT）、书房走 Broadlink A2，各房间再带 PM2.5、甲醛这些指标
+  // 阈值按国标来：PM2.5 24h 均值 75/115，甲醛 GB/T 18883 限值 0.08 mg/m³
+  function airLevel(k, v) {
+    if (k === '甲醛') return v >= 0.1 ? 'crit' : (v >= 0.08 ? 'warn' : '');
+    if (k === 'PM2.5') return v >= 115 ? 'crit' : (v >= 75 ? 'warn' : '');
+    if (k === 'PM10') return v >= 150 ? 'warn' : '';
+    if (k === 'CO₂' || k === 'CO2') return v >= 1000 ? 'warn' : '';
+    return '';
+  }
+
   function envHTML(ha) {
     const env = ha.env || [];
     const od = ha.outdoor || {};
+    const room = env.find((e) => e.name === '客厅') || env[0];
     const head = `<div class="sheet-sum">
-        <div class="ss-item"><b>${env.filter((e) => e.temp != null).length}</b><span>温度传感器</span></div>
-        <div class="ss-item"><b>${env.filter((e) => e.hum != null).length}</b><span>湿度传感器</span></div>
-        <div class="ss-item"><b>${od.temp != null ? od.temp.toFixed(0) + '°' : '—'}</b><span>室外</span></div>
+        <div class="ss-item"><b>${room && room.temp != null ? room.temp.toFixed(1) + '°' : '—'}</b><span>${room ? esc(room.name) + '温度' : '室内温度'}</span></div>
+        <div class="ss-item"><b>${room && room.hum != null ? room.hum.toFixed(0) + '%' : '—'}</b><span>${room ? esc(room.name) + '湿度' : '室内湿度'}</span></div>
+        <div class="ss-item"><b>${od.temp != null ? od.temp.toFixed(0) + '°' : '—'}</b><span>室外 ${esc(WEATHER_CN[od.cond] || od.cond || '')}</span></div>
       </div>`;
-    const rows = env.map((e) => `
-      <div class="ac">
-        <svg><use href="#i-thermo"></use></svg>
-        <div class="ac-mid">
-          <div class="ac-nm">${esc(e.name)}</div>
-          <div class="ac-sub">${e.hum != null ? '湿度 ' + e.hum.toFixed(0) + '%' : '仅温度'}</div>
+    if (!env.length) {
+      return head + `<div class="empty-note">HA 里没有可用的房间传感器</div>`;
+    }
+    const cards = env.map((e) => {
+      const chips = [
+        ['湿度', e.hum != null ? e.hum.toFixed(0) + ' %' : '—', '', e.hum == null],
+        ...(e.extra || []).map((x) => [x.k, fmtAir(x), airLevel(x.k, Number(x.v)), false]),
+      ].filter((c) => !c[3]).map(([k, v, lv]) =>
+        `<span class="env-chip ${lv}">${esc(k)}<b>${esc(v)}</b></span>`).join('')
+        + (e.stale ? `<span class="env-chip stale">${agoText(e.stale)}的读数</span>` : '');
+      return `<div class="env-card">
+        <div class="env-hd">
+          <span class="env-nm">${esc(e.name)}</span>
+          ${e.src ? `<span class="env-src">${esc(e.src)}</span>` : ''}
+          <span class="env-t">${e.temp != null ? e.temp.toFixed(1) : '—'}<i>°C</i></span>
         </div>
-        <span class="ac-t">${e.temp != null ? e.temp.toFixed(1) + '°' : '—'}</span>
-      </div>`).join('');
-    return head + `<div class="ac-list">${rows || '<div class="empty-note">无传感器</div>'}</div>`;
+        <div class="env-kv">${chips || '<span class="env-chip">仅温度</span>'}</div>
+      </div>`;
+    }).join('');
+    const okv = [
+      od.hum != null ? ['湿度', od.hum.toFixed(0) + ' %'] : null,
+      od.wind != null ? ['风', od.wind.toFixed(1) + ' km/h'] : null,
+      od.pressure != null ? ['气压', od.pressure.toFixed(0) + ' hPa'] : null,
+      od.dew != null ? ['露点', od.dew.toFixed(1) + '°'] : null,
+      od.uv != null ? ['紫外线', od.uv.toFixed(1)] : null,
+    ].filter(Boolean);
+    const outCard = `<div class="env-card out">
+        <div class="env-hd">
+          <span class="env-nm">室外</span>
+          <span class="env-src">${esc(od.src || od.entity || 'weather')}</span>
+          <span class="env-t">${od.temp != null ? od.temp.toFixed(1) : '—'}<i>°C</i></span>
+        </div>
+        <div class="env-kv">
+          ${od.cond
+            ? `<span class="env-chip"><b>${esc(WEATHER_CN[od.cond] || od.cond)}</b></span>`
+            : '<span class="env-chip stale">天气实体暂不可用，仅温度</span>'}
+          ${okv.map(([k, v]) => `<span class="env-chip">${esc(k)}<b>${esc(v)}</b></span>`).join('')}
+          ${od.stale ? `<span class="env-chip stale">${agoText(od.stale)}的读数</span>` : ''}
+        </div>
+      </div>`;
+    return head + `<div class="env-list">${cards}${od.temp != null ? outCard : ''}</div>`;
   }
 
   /* ---- 健康检查 ---- */
@@ -1185,14 +2420,83 @@
     if (e.target.id === 'drawer') $('drawer').classList.remove('open');
   });
 
+  // VPN 弹窗：拓扑上的牌子 / 左侧「拨入」行都能点开，点遮罩和 × 关掉
+  $('vpnModalClose').addEventListener('click', closeVpnModal);
+  $('vpnModal').addEventListener('click', (e) => {
+    if (e.target.id === 'vpnModal') closeVpnModal();
+  });
+  const vpnBlockEl = $('vpnBlock');
+  if (vpnBlockEl) {
+    vpnBlockEl.classList.add('clickable');
+    vpnBlockEl.addEventListener('click', openVpnModal);
+    vpnBlockEl.title = '点击查看三个站点的隧道拓扑';
+  }
+
+  // 事件历史：面板右上角「历史 ›」打开，可按时间窗 / 级别 / 关键字回溯
+  $('eventHistory').addEventListener('click', openHistory);
+  $('histClose').addEventListener('click', closeHistory);
+  $('hist').addEventListener('click', (e) => {
+    if (e.target.id === 'hist') closeHistory();
+  });
+  $('histRange').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    $('histRange').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    HIST.hours = parseInt(b.dataset.h, 10) || 24;
+    loadHistory();
+  });
+  $('histLevel').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    $('histLevel').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    HIST.level = b.dataset.lv || '';
+    loadHistory();
+  });
+  $('histQ').addEventListener('input', (e) => {
+    clearTimeout(HIST.timer);
+    HIST.timer = setTimeout(() => {
+      HIST.q = e.target.value.trim();
+      loadHistory();
+    }, 320);
+  });
+
+  // 页签：点击切页；终端统计条右上角「全部终端 ›」直达终端页
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.tab');
+    if (b) setView(b.dataset.view);
+  });
+  $('sumMore').addEventListener('click', () => setView('clients'));
+
+  let wallQT = null;
+  $('wallQ').addEventListener('input', (e) => {
+    clearTimeout(wallQT);
+    const v = e.target.value.trim();
+    wallQT = setTimeout(() => {
+      state.wallQ = v;
+      state.wallKey = '';
+      if (state.snap) renderWall(state.snap.devices || [], state.snap.summary);
+    }, 200);
+  });
+
+  window.addEventListener('hashchange', () => {
+    setView((location.hash || '#overview').slice(1), true);
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeSheet();
       $('drawer').classList.remove('open');
+      closeVpnModal();
+      closeHistory();
       return;
     }
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    // 1-4 直接切页，挂墙时用遥控/键盘翻页比找鼠标快
+    if (e.key >= '1' && e.key <= '4') {
+      setView(VIEWS[parseInt(e.key, 10) - 1]);
+      return;
+    }
     if (e.key === 't' || e.key === 'T') {
       applyTheme(currentTheme() === 'light' ? 'dark' : 'light');
     } else if (e.key === 'f' || e.key === 'F') {
@@ -1232,6 +2536,8 @@
   }
 
   buildTopo();
+  // 支持 #network / #compute / #clients 直接落地，方便挂墙时固定某一页
+  setView((location.hash || '#overview').slice(1), true);
   bootstrapHistory();
   connect();
   window.addEventListener('resize', drawChart);

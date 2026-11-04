@@ -25,16 +25,24 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="app">
+<div class="app" id="app" data-view="overview">
 
   <header class="top">
     <div class="brand">
-      <span class="logo">Y²</span>
+      <span class="logo">NOC</span>
       <div class="brand-txt">
-        <h1>YY&amp;YB Home Lab</h1>
+        <h1 id="brandName">家庭网络 NOC</h1>
         <p>全屋网络与算力 · 实时态势</p>
       </div>
     </div>
+
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab on" data-view="overview" role="tab" aria-selected="true">总览</button>
+      <button class="tab" data-view="network" role="tab" aria-selected="false">网络<span class="tab-n" id="tabNetN"></span></button>
+      <button class="tab" data-view="compute" role="tab" aria-selected="false">算力</button>
+      <button class="tab" data-view="clients" role="tab" aria-selected="false">终端<span class="tab-n" id="tabCliN"></span></button>
+      <i class="tab-ink" id="tabInk"></i>
+    </nav>
 
     <div class="top-stats">
       <button class="stat health-stat" id="healthBox" title="点击查看问题清单">
@@ -75,12 +83,12 @@
 
   <section class="statusband" id="statusBand">
     <div class="sb-grp">
-      <div class="sbi clickable" data-sheet="env" title="点击查看全部温湿度传感器">
+      <div class="sbi clickable" data-sheet="env" id="sbiEnv" title="点击查看各房间温湿度与空气质量">
         <span class="sb-k">室内</span>
         <b class="sb-v" id="sbTemp">—</b>
         <i class="sb-n" id="sbHum">—</i>
       </div>
-      <div class="sbi">
+      <div class="sbi" id="sbiOut">
         <span class="sb-k">室外</span>
         <b class="sb-v" id="sbOutdoor">—</b>
         <i class="sb-n" id="sbWeather">—</i>
@@ -131,37 +139,60 @@
     </div>
   </section>
 
+  <!-- ==================== 总览：只要「现在正常吗」 ==================== -->
+  <div class="view view-overview is-on" id="view-overview" role="tabpanel" aria-label="总览">
   <aside class="col left">
     <section class="panel p-wan">
-      <div class="p-head"><h2>外网链路</h2><span class="badge" id="wanBadge">—</span></div>
-      <div class="ip-row">
-        <span class="ip" id="wanIp">—</span>
-        <span class="uptime" id="wanUptime">—</span>
+      <div class="p-head">
+        <h2>外网链路</h2>
+        <span class="p-head-r"><span class="hint" id="wanUptime">—</span><span class="badge" id="wanBadge">—</span></span>
+      </div>
+      <div class="wan2-row" id="wan1Row">
+        <span class="wan2-tag" id="wan1Tag">WAN1</span>
+        <span class="wan2-ip" id="wanIp">—</span>
+        <span class="wan2-state" id="wan1State"></span>
+        <span class="wan2-rate" id="wan1Rate">↑ — · ↓ —</span>
+      </div>
+      <div class="wan2-row" id="wan2Row" hidden>
+        <span class="wan2-tag" id="wan2Tag">WAN2</span>
+        <span class="wan2-ip" id="wan2Ip">—</span>
+        <span class="wan2-state" id="wan2State">—</span>
+        <span class="wan2-rate">↑ <b id="wan2Up">—</b> · ↓ <b id="wan2Down">—</b></span>
+      </div>
+      <div class="vpn-block" id="vpnBlock" hidden>
+        <div class="vpn-row">
+          <span class="vpn-tag">拨入</span>
+          <span class="vpn-txt" id="vpnSrv">—</span>
+          <span class="vpn-more">›</span>
+        </div>
+        <div class="vpn-row">
+          <span class="vpn-tag alt">拨出</span>
+          <span class="vpn-txt" id="vpnCli">—</span>
+        </div>
       </div>
       <div class="big-rate">
         <div class="br">
-          <span class="br-k">下行</span>
+          <span class="br-k">双线下行</span>
           <span class="br-v down" id="wanDownBig">—</span>
         </div>
         <div class="br">
-          <span class="br-k">上行</span>
+          <span class="br-k">双线上行</span>
           <span class="br-v up" id="wanUpBig">—</span>
         </div>
       </div>
       <canvas id="wanChart" height="56"></canvas>
-      <div class="chart-legend"><span class="lg down">下行</span><span class="lg up">上行</span><span class="lg-t">近 2 分钟</span></div>
+      <div class="chart-legend"><span class="lg down">下行</span><span class="lg up">上行</span><span class="lg-t">双线合计 · 近 2 分钟</span></div>
     </section>
 
-    <section class="panel p-ports">
-      <div class="p-head"><h2>交换机端口</h2><span class="hint" id="portHint">—</span></div>
-      <ul class="port-list" id="portList"></ul>
-      <div class="port-foot" id="portFoot">—</div>
-    </section>
-
-    <section class="panel p-probe">
-      <div class="p-head"><h2>节点延迟</h2><span class="hint">TCP RTT</span></div>
-      <ul class="probe-list" id="probeList"></ul>
-      <div class="probe-foot" id="probeFoot">—</div>
+    <section class="panel p-events">
+      <div class="p-head">
+        <h2>事件流</h2>
+        <span class="p-head-r">
+          <span class="hint" id="eventHint">—</span>
+          <button class="mini-btn" id="eventHistory" title="查历史事件（存在飞牛本地库）">历史 ›</button>
+        </span>
+      </div>
+      <ul class="event-list" id="eventList"></ul>
     </section>
   </aside>
 
@@ -173,12 +204,39 @@
         <span class="lg-item"><i class="ln lan"></i>千兆主干</span>
         <span class="lg-item"><i class="ln hairpin"></i>发卡弯回程</span>
         <span class="lg-item"><i class="ln bypass"></i>二层旁路</span>
+        <span class="lg-item"><i class="ln tunnel"></i>VPN 隧道</span>
       </div>
     </div>
     <svg id="topo" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet"></svg>
   </main>
+  </div><!-- /总览 -->
 
-  <aside class="col right">
+  <!-- ==================== 网络：链路与设备明细 ==================== -->
+  <div class="view view-network" id="view-network" role="tabpanel" aria-label="网络">
+    <section class="panel p-ports">
+      <div class="p-head">
+        <h2>交换机端口</h2>
+        <span class="p-head-r"><span class="hint" id="portHint">—</span></span>
+      </div>
+      <ul class="port-list" id="portList"></ul>
+      <div class="port-foot" id="portFoot">—</div>
+    </section>
+
+    <section class="panel p-wifi">
+      <div class="p-head"><h2>无线覆盖</h2><span class="badge" id="wifiBadge">—</span></div>
+      <div class="ap-list" id="apList"></div>
+      <div class="ap-foot" id="apFoot">—</div>
+    </section>
+
+    <section class="panel p-probe">
+      <div class="p-head"><h2>节点延迟</h2><span class="hint">TCP RTT · 滚动探测</span></div>
+      <ul class="probe-list" id="probeList"></ul>
+      <div class="probe-foot" id="probeFoot">—</div>
+    </section>
+  </div>
+
+  <!-- ==================== 算力：PVE / 路由器 / 虚拟机明细 ==================== -->
+  <div class="view view-compute" id="view-compute" role="tabpanel" aria-label="算力">
     <section class="panel p-pve">
       <div class="p-head"><h2>PVE 8505</h2><span class="badge" id="pveBadge">—</span></div>
       <div class="gauge-row">
@@ -194,35 +252,160 @@
         </div>
       </div>
       <div class="meta-line" id="pveMeta">—</div>
-      <ul class="vm-list" id="vmList"></ul>
       <div class="store-mini">
         <div class="sm-row"><span>FN-Lab /vol1</span><b id="volText">—</b></div>
         <span class="g-bar"><i id="volBar"></i></span>
         <div class="sm-row"><span>PVE rootfs</span><b id="rootText">—</b></div>
         <span class="g-bar"><i id="rootBar"></i></span>
       </div>
+      <div class="pve-trend">
+        <div class="pt-head"><span>近 24 小时</span><i id="pveTrendNote">—</i></div>
+        <canvas id="pveChart" height="118"></canvas>
+        <div class="pt-legend">
+          <span class="ptl cpu" id="ptlCpu">CPU</span>
+          <span class="ptl mem" id="ptlMem">内存</span>
+          <span class="ptl-peak" id="ptlPeak">—</span>
+        </div>
+      </div>
+      <div class="comp-note" id="compNote">—</div>
     </section>
 
-    <section class="panel p-wifi">
-      <div class="p-head"><h2>无线覆盖</h2><span class="badge" id="wifiBadge">—</span></div>
-      <div class="ap-list" id="apList"></div>
+    <!-- 爱快主路由：它也是台机器，CPU / 内存 / 连接数一样占算力，跟 PVE 并排看 -->
+    <section class="panel p-ikuai">
+      <div class="p-head">
+        <h2>iKuai 主路由</h2>
+        <span class="p-head-r"><span class="hint" id="ikUptime">—</span><span class="badge" id="ikBadge">—</span></span>
+      </div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <span class="g-k">CPU</span>
+          <span class="g-v" id="ikCpu">—</span>
+          <span class="g-bar"><i id="ikCpuBar"></i></span>
+        </div>
+        <div class="gauge">
+          <span class="g-k">内存</span>
+          <span class="g-v" id="ikMem">—</span>
+          <span class="g-bar"><i id="ikMemBar"></i></span>
+        </div>
+      </div>
+      <div class="meta-line" id="ikMeta">—</div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>每核占用</span><i id="ikPeak">—</i></div>
+        <div class="ik-cores" id="ikCores"></div>
+      </div>
+
+      <div class="ik-stats" id="ikStats"></div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>内网网段</span><i id="ikSegNote">—</i></div>
+        <div class="ik-segs" id="ikSegs"></div>
+      </div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>双 WAN 实时</span><i id="ikSum">—</i></div>
+        <div class="ik-wans" id="ikWans"></div>
+      </div>
+
+      <div class="ik-trend">
+        <div class="ik-h"><span>带宽趋势 · 近 24 小时</span><i id="ikTrendNote">—</i></div>
+        <canvas id="ikChart" height="70"></canvas>
+      </div>
+      <div class="comp-note" id="ikNote">—</div>
     </section>
 
-    <section class="panel p-events">
-      <div class="p-head"><h2>事件流</h2><span class="hint" id="eventHint">—</span></div>
-      <ul class="event-list" id="eventList"></ul>
+    <section class="panel p-vmtable">
+      <div class="p-head">
+        <h2>虚拟机与容器</h2>
+        <span class="p-head-r"><span class="hint" id="vmHint">—</span></span>
+      </div>
+      <div class="vmt-head">
+        <span>ID</span><span>名称</span><span>类型</span><span>CPU</span><span>内存</span><span>磁盘</span><span>实时流量</span><span>运行</span>
+      </div>
+      <div class="vmt-body" id="vmTable"></div>
     </section>
-  </aside>
+  </div>
 
-  <section class="wall">
-    <div class="wall-head">
-      <h2>全屋终端墙</h2>
-      <div class="wall-filter" id="wallFilter"></div>
-      <span class="hint">亮 = 在线 · 暗 = 离线 · 点击查看详情</span>
-    </div>
-    <div class="wall-body" id="wallBody"></div>
+  <!-- ==================== 终端：全屋设备全屏 ==================== -->
+  <div class="view view-clients" id="view-clients" role="tabpanel" aria-label="终端">
+    <section class="wall">
+      <div class="wall-head">
+        <h2>全屋终端</h2>
+        <div class="wall-filter" id="wallFilter"></div>
+        <input class="wall-q" id="wallQ" placeholder="搜名称 / IP / MAC…" autocomplete="off">
+        <span class="hint">亮 = 在线 · 暗 = 离线 · 点击查看详情</span>
+      </div>
+      <div class="wall-body" id="wallBody"></div>
+    </section>
+  </div>
+
+  <!-- 终端统计条：所有页都能看到「一共多少台、掉了几台」，点开才是全屏终端页 -->
+  <section class="summary" id="summaryBar">
+    <span class="sum-k">全屋终端</span>
+    <b class="sum-v" id="sumOnline">—</b>
+    <span class="sum-n" id="sumKnown">—</span>
+    <div class="sum-cats" id="sumCats"></div>
+    <span class="sum-off" id="sumOffline">—</span>
+    <button class="mini-btn" id="sumMore">全部终端 ›</button>
   </section>
 
+</div>
+
+<!-- VPN 隧道：一个站点一张小拓扑，点拓扑上的 VPN 牌子或左侧「拨入」行打开 -->
+<div class="vpn-modal" id="vpnModal">
+  <div class="vpn-modal-card" role="dialog" aria-modal="true" aria-labelledby="vpnModalTitle">
+    <div class="vpn-modal-head">
+      <div class="vpn-modal-title">
+        <h3 id="vpnModalTitle">VPN 隧道</h3>
+        <p id="vpnModalSub">—</p>
+      </div>
+      <button class="vpn-modal-x" id="vpnModalClose" aria-label="关闭">×</button>
+    </div>
+    <div class="vpn-modal-body">
+      <div class="vpn-sites" id="vpnSites"></div>
+      <div class="vpn-out-wrap">
+        <div class="vpn-sec-h"><span>拨出隧道</span><i id="vpnOutHint">—</i></div>
+        <div class="vpn-outs" id="vpnOutBox"></div>
+      </div>
+      <div class="vpn-foot">数据源：爱快 ppp_online / monitor_iface · 每 15 秒刷新 · 站点名称取自本地配置</div>
+    </div>
+  </div>
+</div>
+
+<!-- 事件历史：本地 SQLite 里的全部事件 + 24h 指标趋势，随时往回翻 -->
+<div class="hist" id="hist">
+  <div class="hist-card" role="dialog" aria-modal="true" aria-labelledby="histTitle">
+    <div class="hist-head">
+      <div class="hist-title">
+        <h3 id="histTitle">事件历史</h3>
+        <p id="histMeta">—</p>
+      </div>
+      <button class="vpn-modal-x" id="histClose" aria-label="关闭">×</button>
+    </div>
+    <div class="hist-tools">
+      <div class="hist-seg" id="histRange">
+        <button data-h="24" class="on">24 小时</button>
+        <button data-h="168">7 天</button>
+        <button data-h="720">30 天</button>
+      </div>
+      <div class="hist-seg" id="histLevel">
+        <button data-lv="" class="on">全部</button>
+        <button data-lv="warn">告警</button>
+        <button data-lv="crit">严重</button>
+      </div>
+      <input class="hist-q" id="histQ" placeholder="按文字筛选…" autocomplete="off">
+    </div>
+    <div class="hist-trend">
+      <div class="ht-head"><span>带宽趋势</span><i id="histTrendNote">—</i></div>
+      <canvas id="histChart" height="84"></canvas>
+      <div class="ht-legend">
+        <span class="htl down">下行</span><span class="htl up">上行</span>
+        <span class="htl-t" id="histTrendSpan">—</span>
+      </div>
+    </div>
+    <ul class="hist-list" id="histList"></ul>
+    <div class="hist-foot" id="histFoot">—</div>
+  </div>
 </div>
 
 <!-- 设备详情 -->

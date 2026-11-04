@@ -71,6 +71,9 @@
   --ln-wan: rgba(53, 182, 242, 0.32);
   --ln-lan: rgba(45, 212, 167, 0.3);
   --ln-hairpin: rgba(245, 181, 68, 0.3);
+  --vpn: #a58bff;
+  --vpn-line: rgba(165, 139, 255, 0.42);
+  --vpn-soft: rgba(165, 139, 255, 0.14);
 
   --port-off-fill: rgba(255, 255, 255, 0.08);
   --port-off-stroke: rgba(255, 255, 255, 0.16);
@@ -87,80 +90,142 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #eef2f7;
-  --glow-a: rgba(53, 182, 242, 0.16);
-  --glow-b: rgba(157, 124, 245, 0.12);
+  --bg: #eff4fb;
+  --glow-a: rgba(43, 125, 233, 0.13);
+  --glow-b: rgba(43, 125, 233, 0.07);
 
   --surface-1: #ffffff;
-  --surface-2: #f6f9fd;
-  --surface-3: #eef3fa;
-  --surface-4: #e4ecf6;
+  --surface-2: #f7fafe;
+  --surface-3: #eef4fc;
+  --surface-4: #e3ecf8;
   --surface-solid: #ffffff;
 
-  --line: rgba(15, 32, 54, 0.1);
-  --line-2: rgba(15, 32, 54, 0.2);
+  --line: #e6eef8;
+  --line-2: #cfdcec;
 
-  --txt: #0d1927;
-  --txt-2: #4a5c70;
-  --txt-3: #7c8da1;
-  --txt-strong: #14243a;
+  --txt: #12253c;
+  --txt-2: #51677f;
+  --txt-3: #8194a9;
+  --txt-strong: #0d2137;
 
-  --ok: #0b9d75;
-  --warn: #b57608;
-  --crit: #d32b33;
-  --cyan: #0a76bb;
-  --violet: #6845d4;
-  --ok-soft: rgba(11, 157, 117, 0.1);
-  --ok-line: rgba(11, 157, 117, 0.38);
-  --crit-soft: rgba(211, 43, 51, 0.1);
-  --crit-line: rgba(211, 43, 51, 0.4);
-  --warn-soft: rgba(181, 118, 8, 0.1);
-  --warn-line: rgba(181, 118, 8, 0.38);
-  --accent-soft: rgba(10, 118, 187, 0.09);
-  --accent-line: rgba(10, 118, 187, 0.45);
+  --ok: #12a06f;
+  --warn: #c98207;
+  --crit: #dd4146;
+  --cyan: #2b7de9;
+  --violet: #5b6ee0;
+  --ok-soft: rgba(18, 160, 111, 0.1);
+  --ok-line: rgba(18, 160, 111, 0.36);
+  --crit-soft: rgba(221, 65, 70, 0.09);
+  --crit-line: rgba(221, 65, 70, 0.36);
+  --warn-soft: rgba(201, 130, 7, 0.1);
+  --warn-line: rgba(201, 130, 7, 0.36);
+  --accent-soft: rgba(43, 125, 233, 0.08);
+  --accent-line: rgba(43, 125, 233, 0.42);
+  --vpn: #6a5cf0;
+  --vpn-line: rgba(106, 92, 240, 0.38);
+  --vpn-soft: rgba(106, 92, 240, 0.09);
 
-  --cat-infra: #0a76bb;
-  --cat-net: #0b8f88;
-  --cat-media: #6845d4;
-  --cat-smart: #c07f10;
-  --cat-client: #64758a;
+  --cat-infra: #2b7de9;
+  --cat-net: #17a2a0;
+  --cat-media: #6a5cf0;
+  --cat-smart: #cf8a10;
+  --cat-client: #7a8da4;
 
-  --topbar: linear-gradient(180deg, #ffffff, #f8fbff);
-  --panel: linear-gradient(180deg, #ffffff, #fbfdff);
-  --band: linear-gradient(90deg, rgba(11, 157, 117, 0.09), rgba(10, 118, 187, 0.07) 45%, rgba(104, 69, 212, 0.07));
-  --wall: linear-gradient(180deg, #ffffff, #fafcff);
-  --stage-bg: radial-gradient(700px 400px at 50% 0%, rgba(10, 118, 187, 0.08), transparent 70%), #ffffff;
+  --topbar: linear-gradient(180deg, #ffffff, #f7fbff);
+  --panel: linear-gradient(180deg, #ffffff, #fcfdff);
+  --band: linear-gradient(90deg, rgba(43, 125, 233, 0.05), rgba(43, 125, 233, 0.035) 45%, rgba(106, 92, 240, 0.045));
+  --wall: linear-gradient(180deg, #ffffff, #fbfdff);
+  --stage-bg: radial-gradient(760px 420px at 50% 0%, rgba(43, 125, 233, 0.07), transparent 72%), #ffffff;
   --card: linear-gradient(180deg, #ffffff, #fbfdff);
-  --overlay: rgba(22, 38, 58, 0.34);
+  --overlay: rgba(16, 38, 68, 0.36);
 
-  --grid-line: rgba(15, 32, 54, 0.08);
-  --grid-line-2: rgba(15, 32, 54, 0.07);
-  --scroll: rgba(15, 32, 54, 0.16);
-  --scroll-hover: rgba(15, 32, 54, 0.3);
-  --shadow: 0 26px 70px rgba(22, 38, 58, 0.22);
-  --panel-shadow: 0 1px 2px rgba(15, 32, 54, 0.05);
+  --grid-line: rgba(18, 45, 80, 0.07);
+  --grid-line-2: rgba(18, 45, 80, 0.06);
+  --scroll: rgba(18, 45, 80, 0.14);
+  --scroll-hover: rgba(18, 45, 80, 0.26);
+  --shadow: 0 24px 64px rgba(16, 44, 84, 0.2);
+  --panel-shadow: 0 1px 2px rgba(16, 44, 84, 0.04), 0 6px 18px rgba(16, 44, 84, 0.035);
 
-  --node-fill: #f3f7fc;
-  --node-stroke: rgba(15, 32, 54, 0.16);
-  --node-fill-on: rgba(10, 118, 187, 0.08);
-  --node-title: #17293f;
-  --node-sub: #6b7d92;
-  --tag: #7c8da1;
-  --ln-bypass: rgba(15, 32, 54, 0.2);
-  --ln-wan: rgba(10, 118, 187, 0.4);
-  --ln-lan: rgba(11, 157, 117, 0.42);
-  --ln-hairpin: rgba(181, 118, 8, 0.42);
+  --node-fill: #ffffff;
+  --node-stroke: rgba(43, 125, 233, 0.26);
+  --node-fill-on: rgba(43, 125, 233, 0.07);
+  --node-title: #14293f;
+  --node-sub: #6b819a;
+  --tag: #7f92a8;
+  --ln-bypass: rgba(18, 45, 80, 0.2);
+  --ln-wan: rgba(43, 125, 233, 0.45);
+  --ln-lan: rgba(18, 160, 111, 0.45);
+  --ln-hairpin: rgba(201, 130, 7, 0.4);
 
-  --port-off-fill: rgba(15, 32, 54, 0.07);
-  --port-off-stroke: rgba(15, 32, 54, 0.16);
+  --port-off-fill: rgba(18, 45, 80, 0.06);
+  --port-off-stroke: rgba(18, 45, 80, 0.14);
 
-  --lamp: #c98a06;
-  --lamp-soft: rgba(255, 186, 46, 0.18);
-  --lamp-line: rgba(201, 138, 6, 0.42);
-  --lamp-glow: 0 0 14px rgba(255, 186, 46, 0.35);
+  --lamp: #cf8a10;
+  --lamp-soft: rgba(255, 183, 45, 0.18);
+  --lamp-line: rgba(207, 138, 16, 0.4);
+  --lamp-glow: 0 0 14px rgba(255, 183, 45, 0.32);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ==========================================================================
+   蓝白皮肤（浅色主题）：顶栏蓝底白字、卡片纯白细边、标题蓝条
+   —— 对齐爱快那套观感，深色主题完全不受影响
+   ========================================================================== */
+:root[data-theme="light"] .top {
+  background: linear-gradient(112deg, #1c67cf 0%, #2b7de9 46%, #4094ef 100%);
+  border-color: transparent;
+  box-shadow: 0 8px 22px rgba(28, 103, 207, 0.22);
+  color: #fff;
+}
+:root[data-theme="light"] .top .brand-txt h1 { color: #fff; letter-spacing: 0.03em; }
+:root[data-theme="light"] .top .brand-txt p { color: rgba(255, 255, 255, 0.72); }
+:root[data-theme="light"] .top .logo {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+}
+:root[data-theme="light"] .top .stat { border-left-color: rgba(255, 255, 255, 0.16); }
+:root[data-theme="light"] .top .stat .k { color: rgba(255, 255, 255, 0.7); }
+:root[data-theme="light"] .top .stat .v { color: #fff; }
+:root[data-theme="light"] .top .stat .v em,
+:root[data-theme="light"] .top .stat .v i { color: rgba(255, 255, 255, 0.6); }
+:root[data-theme="light"] .top .rate-stat .up { color: #bfe4ff; }
+:root[data-theme="light"] .top .rate-stat .down { color: #c6f0dd; }
+:root[data-theme="light"] .top .health-stat .v { color: #d9f7e8; }
+:root[data-theme="light"] .top .health-stat.warn .v { color: #ffe1a8; }
+:root[data-theme="light"] .top .health-stat.crit .v { color: #ffc9c9; }
+:root[data-theme="light"] .top .health-stat:hover { background: rgba(255, 255, 255, 0.12); }
+:root[data-theme="light"] .top .clock b { color: #fff; }
+:root[data-theme="light"] .top .clock span { color: rgba(255, 255, 255, 0.66); }
+:root[data-theme="light"] .top .theme-btn {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #fff;
+}
+:root[data-theme="light"] .top .theme-btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.44);
+  color: #fff;
+}
+
+/* 面板标题左侧一道蓝条，卡片才有"仪表盘"的骨架感 */
+:root[data-theme="light"] .p-head h2::before {
+  content: "";
+  display: inline-block;
+  width: 3px; height: 10px;
+  margin-right: 7px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  background: linear-gradient(180deg, #2b7de9, #74b4ff);
+}
+:root[data-theme="light"] .statusband {
+  background: linear-gradient(180deg, #ffffff, #fafdff);
+  box-shadow: var(--panel-shadow);
+}
+:root[data-theme="light"] .stage {
+  background: var(--stage-bg);
+}
 
 body {
   background:
@@ -178,14 +243,10 @@ body {
 
 .app {
   display: grid;
-  /* 两侧放宽、中间收窄：拓扑本身用 viewBox 缩放，给太宽只是留白 */
-  grid-template-columns: 360px minmax(0, 1fr) 396px;
-  grid-template-rows: 64px 52px minmax(0, 1fr) auto;
-  grid-template-areas:
-    "top top top"
-    "band band band"
-    "left stage right"
-    "wall wall wall";
+  /* 单列四行：顶栏 / 状态带 / 当前页 / 终端统计条。
+     页面内容由 .view 自己排网格，切换页签只是换一层 grid，不再重算全局列宽。 */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 64px auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 12px;
   height: 100vh;
@@ -193,9 +254,90 @@ body {
   min-width: 0;
 }
 
+/* 固定行位：不显示的页签是 display:none，会退出网格并让后面的元素整体上移，
+   所以每一层都钉死在行号上，隐藏与否都不影响别层的位置 */
+.top { grid-row: 1; }
+.statusband { grid-row: 2; }
+.view { grid-row: 3; }
+.summary { grid-row: 4; }
+
+/* ---------- 页签 ---------- */
+.tabs {
+  position: relative;
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.tab {
+  position: relative;
+  font: inherit; font-size: 11.5px; letter-spacing: 0.02em;
+  padding: 5px 14px;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--txt-3);
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--txt-2); }
+.tab.on {
+  color: var(--cyan);
+  background: var(--surface-1);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(16, 44, 84, 0.12);
+}
+.tab-n {
+  font-family: var(--mono); font-size: 9.5px;
+  color: var(--txt-3); font-weight: 400;
+}
+.tab.on .tab-n { color: var(--cyan); opacity: 0.75; }
+.tab-n:empty { display: none; }
+
+/* ---------- 页面容器 ---------- */
+.view { display: none; min-height: 0; min-width: 0; }
+.view.is-on { display: grid; }
+
+.view-overview {
+  grid-template-columns: 356px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.view-network {
+  grid-template-columns: minmax(0, 1.28fr) 400px;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "ports wifi"
+    "ports probe";
+  gap: 10px;
+}
+.view-network .p-ports { grid-area: ports; }
+.view-network .p-wifi { grid-area: wifi; }
+.view-network .p-probe { grid-area: probe; }
+
+/* 算力页三栏：PVE 宿主机 | 爱快路由 | 虚拟机明细。路由器也是台机器，
+   它的 CPU / 内存 / 会话数跟 PVE 放一起看，才知道算力到底花在哪。 */
+.view-compute {
+  grid-template-columns: 340px 312px minmax(0, 1fr);
+  grid-template-areas: "pve ik vm";
+  gap: 10px;
+}
+.view-compute .p-pve { grid-area: pve; }
+.view-compute .p-ikuai { grid-area: ik; }
+.view-compute .p-vmtable { grid-area: vm; }
+
+.view-clients { grid-template-columns: minmax(0, 1fr); }
+
+/* 状态带只在总览出现 */
+.app[data-view="network"] .statusband,
+.app[data-view="compute"] .statusband,
+.app[data-view="clients"] .statusband { display: none; }
+
+
 /* ---------- 顶栏 ---------- */
 .top {
-  grid-area: top;
   display: flex;
   align-items: center;
   gap: 22px;
@@ -266,7 +408,6 @@ body {
    用 grid 的 1fr auto 1fr 定位——flex + margin:auto 要靠剩余空间协商，
    内容一多就不居中；grid 列宽对称，首尾必然贴边、中段必然居中 */
 .statusband {
-  grid-area: band;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -321,10 +462,26 @@ body {
 .sbi-ha { padding-right: 0; }
 
 /* ---------- 通用面板 ---------- */
-.col { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
-.left { grid-area: left; }
-.right { grid-area: right; }
+.col {
+  display: flex; flex-direction: column; gap: 12px;
+  min-height: 0; min-width: 0;
+  /* 没地方时在本列内部滚动，绝不压到下面的终端墙 —— 面板不会再错位 */
+  overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+  padding-right: 2px;
+}
+.col::-webkit-scrollbar { width: 6px; }
+.col::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.col::-webkit-scrollbar-track { background: transparent; }
+.left, .right { min-width: 0; }
 .panel { min-width: 0; }
+
+/* 面板按内容取高，由父级 .col 负责滚动；否则小屏上面板会被压扁后互相盖住 */
+.col > .panel { flex: 0 0 auto; }
+/* 探针与事件流是弹性面板：空间不够时先压它们（列表内部滚动），而不是把整列顶出屏幕 */
+.col > .p-probe { flex: 1 1 auto; min-height: 130px; }
+.col > .p-events { flex: 1 1 auto; min-height: 84px; }
 
 .panel {
   border: 1px solid var(--line);
@@ -355,18 +512,20 @@ body {
 
 /* ---------- 外网链路 ---------- */
 .p-wan { flex-shrink: 0; }
-.ip-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
-.ip { font-family: var(--mono); font-size: 13px; color: var(--txt-strong); letter-spacing: 0.02em; }
-.uptime { font-size: 10px; color: var(--txt-3); font-family: var(--mono); }
+/* 头部右侧：运行时长 + PPPoE 徽标（运行时长从 IP 行挪上来，给速率腾位置） */
+.p-head-r { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.ip-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; min-width: 0; }
+.ip { font-family: var(--mono); font-size: 13px; color: var(--txt-strong); letter-spacing: 0.02em; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uptime { font-size: 10px; color: var(--txt-3); font-family: var(--mono); flex: 0 0 auto; white-space: nowrap; }
 
-.big-rate { display: flex; gap: 10px; margin-bottom: 12px; }
+.big-rate { display: flex; gap: 10px; margin-bottom: 9px; }
 .br { flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .br-k { font-size: 10px; color: var(--txt-3); }
-.br-v { font-family: var(--mono); font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
+.br-v { font-family: var(--mono); font-size: 19px; font-weight: 500; letter-spacing: -0.01em; }
 .br-v.down { color: var(--violet); }
 .br-v.up { color: var(--cyan); }
 
-#wanChart { width: 100%; height: 64px; display: block; }
+#wanChart { width: 100%; height: 46px; display: block; flex-shrink: 0; }
 .chart-legend { display: flex; gap: 12px; align-items: center; margin-top: 6px; }
 .lg, .lg-item { font-size: 10px; color: var(--txt-3); display: inline-flex; align-items: center; gap: 5px; }
 .lg.down::before, .lg.up::before {
@@ -378,12 +537,26 @@ body {
 
 /* ---------- 节点延迟 ---------- */
 .p-probe { flex: 1; }
-.probe-list { list-style: none; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; align-content: flex-start; }
-.probe-list li {
-  display: flex; align-items: center; gap: 9px;
-  font-size: 12px; padding: 5px 0;
+/* 12 个探针排两列：高度减半，短屏也能整块看见 */
+.probe-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 14px;
+  overflow-y: auto;
+  flex: 1;
+  align-content: start;
 }
-.probe-list .pn { color: var(--txt-2); flex-shrink: 0; width: 80px; }
+.probe-list li {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11.5px; padding: 2px 0; min-width: 0;
+}
+.probe-list .pn {
+  color: var(--txt-2); flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.probe-list .pbar { display: none; }
+.probe-list .pn { color: var(--txt-2); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .probe-list .pbar {
   flex: 1; height: 3px; border-radius: 2px;
   background: var(--grid-line-2); overflow: hidden;
@@ -392,7 +565,7 @@ body {
   display: block; height: 100%; width: 0%; border-radius: 2px;
   background: var(--ok); transition: width 0.5s ease;
 }
-.probe-list .pr { font-family: var(--mono); font-size: 11px; color: var(--txt); width: 54px; text-align: right; flex-shrink: 0; }
+.probe-list .pr { font-family: var(--mono); font-size: 10.5px; color: var(--txt); width: 46px; text-align: right; flex-shrink: 0; white-space: nowrap; }
 .probe-list .pd { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
 .probe-list li.bad .pd { background: var(--crit); }
 .probe-list li.bad .pr { color: var(--crit); }
@@ -400,7 +573,7 @@ body {
 .probe-list li.warn .pd { background: var(--warn); }
 .probe-list li.warn .pbar i { background: var(--warn); }
 .probe-foot {
-  margin-top: 10px; padding-top: 10px;
+  margin-top: 7px; padding-top: 6px;
   border-top: 1px solid var(--line);
   font-size: 10px; color: var(--txt-3);
   font-family: var(--mono); flex-shrink: 0;
@@ -408,7 +581,6 @@ body {
 
 /* ---------- 中央舞台 ---------- */
 .stage {
-  grid-area: stage;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--stage-bg);
@@ -426,6 +598,7 @@ body {
 .lg-item .ln.lan { border-color: var(--ok); }
 .lg-item .ln.hairpin { border-color: var(--warn); border-top-style: dashed; }
 .lg-item .ln.bypass { border-color: var(--txt-3); border-top-style: dashed; }
+.lg-item .ln.tunnel { border-color: var(--vpn); border-top-style: dashed; }
 
 #topo { flex: 1; width: 100%; min-height: 0; }
 
@@ -434,11 +607,13 @@ body {
 #topo .lnk.lan { stroke: var(--ln-lan); }
 #topo .lnk.hairpin { stroke: var(--ln-hairpin); stroke-dasharray: 5 4; }
 #topo .lnk.bypass { stroke: var(--ln-bypass); stroke-dasharray: 4 5; }
+#topo .lnk.tunnel { stroke: var(--vpn-line); stroke-dasharray: 4 3; }
 
 #topo .flow { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 3 21; }
 #topo .flow.wan { stroke: var(--cyan); }
 #topo .flow.lan { stroke: var(--ok); }
 #topo .flow.hairpin { stroke: var(--warn); stroke-dasharray: 4 18; }
+#topo .flow.tunnel { stroke: var(--vpn); stroke-dasharray: 3 19; }
 @keyframes flowrun { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 #topo .flow { animation: flowrun linear infinite; }
 
@@ -457,6 +632,39 @@ body {
 #topo .tag { fill: var(--tag); font-size: 10px; font-family: var(--mono); }
 #topo .tag-warn { fill: var(--warn); font-size: 10px; }
 #topo .node.off .node-title { fill: var(--node-sub); }
+/* AP 汇聚交换：设备本身没有管理地址，画成链路上一块虚线小牌子，别让它冒充可探测节点 */
+#topo .node-box.chip { fill: var(--node-fill); stroke: var(--node-stroke); stroke-dasharray: 3 3; }
+#topo .node.off .node-box.chip { stroke: var(--crit-line); opacity: 0.8; }
+#topo .chip-text { font-size: 9.5px; font-weight: 400; fill: var(--node-sub); letter-spacing: 0.02em; }
+/* VPN 隧道牌：不用虚线（那是"未管理设备"的语义），改紫色细描边 + 同色文字 */
+#topo .node-box.chip.vpn { stroke: var(--vpn-line); stroke-dasharray: none; fill: transparent; }
+#topo .node-box.chip.vpn ~ .chip-text { fill: var(--vpn); font-size: 9.5px; letter-spacing: 0; }
+#topo .node.off .node-box.chip.vpn { stroke: var(--crit-line); }
+#topo .node.off .node-box.chip.vpn ~ .chip-text { fill: var(--node-sub); }
+/* VPN 入口牌：可点，悬停时点亮，暗示"点开有东西" */
+#topo .node.clickable .node-box.chip.vpn { cursor: pointer; transition: fill 0.16s, stroke 0.16s; }
+#topo .node.clickable:hover .node-box.chip.vpn { fill: var(--vpn-soft); stroke: var(--vpn); }
+#topo .node.clickable:hover .chip-text { fill: var(--vpn); }
+
+/* 三个 VPN 分支站点：直接摆在拓扑右上角，一条隧道一根线 */
+#topo .vtile { cursor: pointer; }
+#topo .vt-box {
+  fill: var(--surface-1);
+  stroke: var(--vpn-line);
+  stroke-width: 1;
+  transition: fill 0.16s, stroke 0.16s;
+}
+#topo .vtile:hover .vt-box { fill: var(--vpn-soft); stroke: var(--vpn); }
+#topo .vt-bar { fill: var(--vpn); opacity: 0.85; }
+#topo .vt-name { fill: var(--node-title); font-size: 12.5px; font-weight: 600; }
+#topo .vt-sub { fill: var(--txt-2); font-size: 9.5px; font-family: var(--mono); }
+#topo .vt-ip { fill: var(--vpn); font-size: 10.5px; font-family: var(--mono); }
+#topo .vt-dot { fill: var(--txt-3); }
+#topo .vtile.on .vt-dot { fill: var(--ok); }
+#topo .vtile.off .vt-box { stroke: var(--node-stroke); stroke-dasharray: 4 3; }
+#topo .vtile.off .vt-bar { fill: var(--node-stroke); }
+#topo .vtile.off .vt-name { fill: var(--node-sub); }
+#topo .vtile.off .vt-ip { fill: var(--txt-3); }
 
 /* ---------- PVE ---------- */
 .p-pve { flex-shrink: 0; }
@@ -479,13 +687,13 @@ body {
 
 .meta-line {
   font-size: 10.5px; color: var(--txt-3); font-family: var(--mono);
-  padding-bottom: 10px; margin-bottom: 9px;
+  padding-bottom: 7px; margin-bottom: 7px;
   border-bottom: 1px solid var(--line);
 }
-.vm-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.vm-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .vm-list li {
   display: flex; align-items: center; gap: 8px;
-  font-size: 12px; padding: 5px 8px; border-radius: 7px;
+  font-size: 11.5px; padding: 4px 8px; border-radius: 7px;
   background: var(--surface-1);
 }
 .vm-list .vmid { font-family: var(--mono); font-size: 10px; color: var(--txt-3); width: 26px; }
@@ -513,13 +721,15 @@ body {
 
 /* ---------- 终端墙 ---------- */
 .wall {
-  grid-area: wall;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--wall);
   box-shadow: var(--panel-shadow);
   padding: 12px 16px 14px;
   display: flex; flex-direction: column; gap: 11px;
+  min-height: 0;
+  max-height: 24vh;
+  overflow: hidden;
 }
 .wall-head { display: flex; align-items: baseline; gap: 14px; }
 .wall-head h2 { font-size: 11px; font-weight: 500; letter-spacing: 0.1em; color: var(--txt-2); text-transform: uppercase; }
@@ -540,6 +750,11 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
   gap: 13px 16px;
   align-items: stretch;
+  /* 终端多的时候墙内自己滚，别把上面的拓扑/面板顶出屏幕 */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
 }
 .wall-group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 /* 只筛一个类别时别让那一块横着拉满整行（否则卡片间距被撑得很稀） */
@@ -820,9 +1035,11 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
 
 /* ---------- 响应式 ---------- */
+/* 骨架永远是「顶栏 / 状态带 / 当前页 / 统计条」四行，窄屏只调每页内部的列宽 */
 @media (max-width: 1560px) {
-  .app { grid-template-columns: 318px minmax(0, 1fr) 348px; }
   .top-stats .stat { padding: 0 12px; }
+  .top { gap: 16px; }
+  .view-compute { grid-template-columns: 320px 296px minmax(0, 1fr); }
 }
 /* 状态带十项在这个宽度已放不下，提前换行，别被 overflow:hidden 裁掉 */
 @media (max-width: 1420px) {
@@ -834,72 +1051,93 @@ body {
   .sb-mid { margin: 0 auto; justify-self: auto; }
   .sbi { padding: 5px 12px; }
 }
-@media (max-width: 1300px) {
-  .app {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas:
-      "top top"
-      "band band"
-      "stage stage"
-      "left right"
-      "wall wall";
-    grid-template-rows: auto auto 460px auto auto;
-    height: auto;
-  }
-  .stage { min-height: 460px; }
-  .top { flex-wrap: wrap; height: auto; padding: 10px 16px; gap: 14px; }
-  .top-stats { flex-wrap: wrap; }
-
+@media (max-width: 1360px) {
+  .view-overview { grid-template-columns: 322px minmax(0, 1fr); }
+  .view-network { grid-template-columns: minmax(0, 1fr) 344px; }
+  .view-compute { grid-template-columns: 302px 278px minmax(0, 1fr); }
+  .tab { padding: 5px 9px; font-size: 10.5px; }
+  .tab-n { font-size: 9px; }
+  .top-stats .stat { padding: 0 9px; }
+  .top-stats .k { font-size: 9px; }
 }
-/* 平板竖屏 / 分屏：两列会把卡片压到 200px 以内，改单列堆叠 */
-@media (max-width: 1100px) {
-  .app {
+/* 1121~1240 仍走三栏：表格虽然窄，但每列都还在（列宽已在上面的窄屏补丁里收过）。
+   再窄到 1120 就换「上排两台机器 + 表格整行」，那一档 app 改成自然高度，能整页滚。 */
+/* 再窄下去多列排不开：整页改纵向堆叠，每块给确定高度，内部自己滚 */
+@media (max-width: 1120px) {
+  .app { height: auto; min-height: 100vh; grid-template-rows: auto auto auto auto; }
+  .view-overview {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "top" "band" "stage" "left" "right" "wall";
-    grid-template-rows: auto auto 420px auto auto auto;
-    height: auto;
+    grid-template-rows: auto 420px;
   }
-  .stage { min-height: 420px; }
+  .view-overview .col { max-height: 400px; }
+  .view-network {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 400px 340px 320px;
+    grid-template-areas: "ports" "wifi" "probe";
+  }
+  /* 页面已经改成纵向自然高度，算力页仍保持「上排两台机器 + 下面虚拟机表」，
+     全部堆成一列的话标尺会被拉成一整行宽，反而难看 */
+  .view-compute {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 420px;
+    grid-template-areas: "pve ik" "vm vm";
+  }
+  .view-clients .wall { height: 620px; }
+  .top { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 12px; }
+  .top-stats { flex-wrap: wrap; }
 }
 @media (max-width: 860px) {
-  .app {
+  .app { padding: 8px; gap: 8px; }
+  .view-overview { grid-template-rows: auto 340px; }
+  .view-network { grid-template-rows: 340px 300px 280px; }
+  /* 手机宽度两台机器并排已经放不下，老老实实竖着堆 */
+  .view-compute {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "top" "band" "stage" "left" "right" "wall";
-    grid-template-rows: auto auto 380px auto auto auto;
-    padding: 8px;
-    gap: 8px;
+    grid-template-rows: auto auto 380px;
+    grid-template-areas: "pve" "ik" "vm";
   }
-  .stage { min-height: 380px; }
-  .top { flex-wrap: wrap; height: auto; padding: 14px 16px; gap: 12px; }
-  .top-stats { flex-wrap: wrap; }
+  .view-clients .wall { height: 520px; }
+  .top { padding: 12px 14px; }
   .stat { padding: 0 10px; }
   .clock { display: none; }
   .theme-btn { margin-left: auto; }
+  .tabs { order: 9; width: 100%; justify-content: space-between; }
+  .tab { flex: 1; justify-content: center; }
+  .view-clients .wall-group { flex-direction: column; gap: 8px; }
+  .view-clients .wall-gh { width: auto; flex-direction: row; align-items: center; gap: 6px; }
   .sheet-card { width: 100vw; }
+  .vpn-modal { padding: 10px; }
+  .vpn-modal-body { padding: 12px 13px 15px; }
+  .vpn-sites { grid-template-columns: minmax(0, 1fr); }
   .lamp-grid { grid-template-columns: 1fr; }
-  /* 手机宽度下横滚状态带很难用，改成自动换行 */
   .statusband {
     display: flex; flex-wrap: wrap; align-items: center;
-    padding: 9px 12px;
-    row-gap: 6px;
-    overflow: visible;
-    height: auto;
+    padding: 9px 12px; row-gap: 6px; overflow: visible; height: auto;
   }
   .sbi { border-left: none; padding: 3px 12px 3px 0; }
   .sb-grp { flex-wrap: wrap; row-gap: 4px; }
   .sb-mid { margin: 0; justify-self: auto; }
   .sb-n { max-width: 140px; }
+  .summary { flex-wrap: wrap; row-gap: 6px; }
+  .sum-cats { overflow-x: auto; }
 }
 
 /* ---------- 交换机端口 ---------- */
 .p-ports { flex-shrink: 0; }
-.port-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+/* 8 个口排两列：面板高度减半，小屏也不会溢出 */
+.port-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 12px;
+}
 .port-list li {
   display: grid;
-  grid-template-columns: 30px 1fr 84px;
+  grid-template-columns: 21px minmax(0, 1fr) 56px;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   font-size: 11px;
+  min-width: 0;
 }
 .port-no {
   font-family: var(--mono); font-size: 10px;
@@ -915,6 +1153,10 @@ body {
   display: flex; align-items: center; gap: 5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 两列布局下名字空间不够，速度档位收到 title 里；面板顶部仍有汇总 */
+.port-list .port-name em { display: none; }
+/* 角色名必须单行省略：两列布局里一换行就会把下面的流量条顶开 */
+.pn-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .port-name em {
   font-style: normal; font-size: 9px; color: var(--txt-3);
   border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; flex-shrink: 0;
@@ -934,7 +1176,7 @@ body {
 .port-rate i { color: var(--cyan); font-style: normal; }
 .port-rate.off { color: var(--txt-3); }
 .port-foot {
-  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line);
+  margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--line);
   font-size: 10px; color: var(--txt-3);
   display: flex; justify-content: space-between; gap: 8px;
 }
@@ -942,11 +1184,11 @@ body {
 
 /* ---------- 无线覆盖 ---------- */
 .p-wifi { flex-shrink: 0; }
-.ap-list { display: flex; flex-direction: column; gap: 9px; }
+.ap-list { display: flex; flex-direction: column; gap: 5px; }
 .ap-item {
   border: 1px solid var(--line);
   border-radius: 9px;
-  padding: 7px 9px;
+  padding: 6px 9px;
   background: var(--surface-1);
 }
 .ap-item.off { opacity: 0.45; }
@@ -956,7 +1198,7 @@ body {
 .ap-top .ap-cnt { font-family: var(--mono); font-size: 12px; color: var(--ok); }
 .ap-top .ap-cnt.sp { color: var(--txt-3); font-size: 10px; }
 .ap-meta {
-  margin-top: 5px;
+  margin-top: 3px;
   display: flex; gap: 6px; flex-wrap: wrap;
   font-family: var(--mono); font-size: 9.5px; color: var(--txt-3);
 }
@@ -968,7 +1210,7 @@ body {
 
 /* ---------- 存储迷你条 ---------- */
 .store-mini {
-  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line);
+  margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
 }
 .sm-row { display: flex; justify-content: space-between; font-size: 10px; color: var(--txt-3); }
@@ -993,3 +1235,887 @@ text.port-rate {
 /* 说明：这里原本有个 1500px 断点把 .sbi 的 padding 清成 `0 12px`，
    上下内边距被抹掉后 baseline 对齐从容器顶部起算，状态带文字就会贴到上边框。
    已删除——状态带宽度不够时统一走上面 1420px 的换行规则。 */
+
+/* ---------------- 双 WAN：WAN1 / WAN2 两行 ---------------- */
+/* 一行里放了标签 + IP + 状态 + 速率，窄面板下必须允许压缩，否则会撑出面板被裁掉 */
+.wan2-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--txt);
+  min-width: 0;
+}
+.wan2-row[hidden] { display: none; }
+.wan2-tag {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--cyan);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ip-row .wan2-tag { margin-right: 2px; }
+.wan2-ip {
+  font-family: var(--mono, monospace);
+  color: var(--txt-strong);
+  font-size: 11px;
+  /* IP 完整显示优先，实在放不下才让速率省略 */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.wan2-state { font-size: 10px; flex: 0 0 auto; white-space: nowrap; }
+/* 正常状态不写字，但不能白占一个 gap 的宽度 */
+.wan2-state:empty { display: none; }
+.wan2-state.ok { color: var(--ok); }
+.wan2-state.bad { color: var(--crit); }
+.wan2-rate {
+  margin-left: auto;
+  color: var(--txt-2);
+  opacity: 0.9;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9.5px;
+  letter-spacing: -0.01em;
+  font-family: var(--mono, monospace);
+}
+.wan2-rate b { font-weight: 600; }
+
+/* VPN 两行：拨入（服务端客户端）/ 拨出（本机拨号隧道） */
+.vpn-block { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.vpn-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.vpn-tag {
+  flex: 0 0 auto;
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 4px;
+  color: var(--cyan);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+.vpn-tag.alt { color: var(--txt-2); border-color: var(--line-2); background: transparent; }
+.vpn-txt {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txt-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vpn-txt b { color: var(--txt-strong); font-weight: 700; }
+.vpn-txt i { font-style: normal; color: var(--cyan); }
+.vpn-txt s { text-decoration: none; color: var(--txt-3); margin-left: 6px; }
+.vpn-txt em { font-style: normal; }
+.vpn-txt em.ok { color: var(--ok); }
+.vpn-txt em.bad { color: var(--crit); }
+
+/* 整块可点：点开是三个站点的隧道拓扑 */
+.vpn-block.clickable { cursor: pointer; border-radius: 7px; }
+.vpn-block.clickable:hover .vpn-txt { color: var(--txt); }
+.vpn-block.clickable:hover .vpn-more { color: var(--vpn); transform: translateX(1px); }
+.vpn-more {
+  flex: 0 0 auto; font-size: 12px; line-height: 14px;
+  color: var(--txt-3); transition: color 0.15s, transform 0.15s;
+}
+
+/* ---------------- VPN 弹窗：一个站点一张小拓扑 ---------------- */
+.vpn-modal {
+  position: fixed; inset: 0; z-index: 70;
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+}
+.vpn-modal.open { display: flex; }
+.vpn-modal-card {
+  width: min(1180px, 100%);
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: vpn-in 0.18s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+@keyframes vpn-in { from { transform: translateY(10px) scale(0.99); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.vpn-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 16px 20px 13px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.vpn-modal-title h3 { font-size: 16px; font-weight: 500; letter-spacing: 0.01em; }
+.vpn-modal-title p { font-size: 10.5px; color: var(--txt-3); margin-top: 4px; font-family: var(--mono); }
+.vpn-modal-x {
+  width: 30px; height: 30px; flex-shrink: 0; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface-1); color: var(--txt-2);
+  font-size: 19px; line-height: 1;
+}
+.vpn-modal-x:hover { color: var(--txt); border-color: var(--line-2); }
+.vpn-modal-body {
+  flex: 1; overflow-y: auto;
+  padding: 15px 20px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+/* 三列为主；窗口窄了自动掉成两列 / 一列，SVG 跟着等比缩 */
+.vpn-sites { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.vs-card {
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 12px 14px 12px;
+  border-radius: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+}
+.vs-card.on { border-color: var(--vpn-line); background: linear-gradient(180deg, var(--vpn-soft), transparent 62%); }
+.vs-card.off { opacity: 0.6; }
+.vs-top { display: flex; align-items: center; gap: 7px; }
+.vs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--txt-3); flex: 0 0 auto; }
+.vs-card.on .vs-dot { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+.vs-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12px; font-weight: 500; color: var(--txt-strong);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vs-badge {
+  flex: 0 0 auto; font-size: 9px; line-height: 15px;
+  padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--line-2); color: var(--txt-3);
+}
+.vs-card.on .vs-badge { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+
+.vs-svg { display: block; width: 100%; height: auto; }
+.vs-box { fill: var(--surface-2); stroke: var(--line-2); stroke-width: 1; }
+.vs-t { fill: var(--node-title); font-size: 11.5px; font-weight: 500; text-anchor: middle; }
+.vs-s { fill: var(--node-sub); font-size: 9px; text-anchor: middle; font-family: var(--mono); }
+.vs-gw { fill: var(--txt-2); font-size: 9.4px; text-anchor: middle; font-family: var(--mono); }
+.vs-lan { fill: var(--txt-2); font-size: 8.8px; text-anchor: middle; font-family: var(--mono); opacity: 0.9; }
+.vs-lnk { fill: none; stroke: var(--vpn); stroke-width: 1.4; stroke-dasharray: 4 4; }
+.vs-arw { fill: none; stroke: var(--vpn); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.vs-ip { fill: var(--vpn); font-size: 9.6px; text-anchor: middle; font-family: var(--mono); }
+.vs-lbl { fill: var(--txt-3); font-size: 8px; text-anchor: middle; letter-spacing: 0.06em; }
+.vs-card.off .vs-lnk, .vs-card.off .vs-arw { stroke: var(--node-stroke); }
+.vs-card.off .vs-ip { fill: var(--txt-3); }
+
+.vs-meta {
+  display: flex; flex-wrap: wrap; gap: 2px 10px;
+  font-family: var(--mono); font-size: 9px; color: var(--txt-3);
+}
+.vs-meta .vm-peer { color: var(--txt-2); }
+.vs-meta .vm-tr { color: var(--txt-2); }
+.vs-meta .dim { opacity: 0.75; }
+
+/* 站点网段里的其他设备：.2 / .4 这种主机位写法，完整地址在 title 里 */
+.vs-dev {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--line);
+  font-family: var(--mono); font-size: 9px; color: var(--txt-2);
+}
+.vs-dev-k {
+  flex: 0 0 auto; font-size: 8.5px; color: var(--txt-3);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0 4px;
+}
+.vs-dev-i { color: var(--txt-2); white-space: nowrap; }
+.vs-dev-i b { color: var(--vpn); font-weight: 600; }
+.vs-dev-none { color: var(--txt-3); }
+
+.vpn-sec-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--txt-3); letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.vpn-sec-h i { font-style: normal; font-family: var(--mono); letter-spacing: 0; }
+.vpn-outs { display: flex; flex-direction: column; gap: 6px; }
+.vo-card {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 10px;
+}
+.vo-card.ok { border-color: var(--ok-line); }
+.vo-card.bad { border-color: var(--crit-line); }
+.vo-if { color: var(--txt-strong); font-weight: 600; }
+.vo-ar { color: var(--txt-3); }
+.vo-ip { color: var(--vpn); }
+.vo-gw { color: var(--txt-3); }
+.vo-st { margin-left: auto; color: var(--txt-2); }
+.vo-card.ok .vo-st { color: var(--ok); }
+.vo-card.bad .vo-st { color: var(--crit); }
+.vo-empty { font-size: 10px; color: var(--txt-3); font-family: var(--mono); }
+.vpn-foot { font-size: 9px; color: var(--txt-3); font-family: var(--mono); }
+
+
+/* ---------------- 矮屏（笔记本 / 非全屏浏览器）--------------
+   页签已经把内容分开了，矮屏只需压紧行距，不用再砍掉内容。 */
+@media (max-height: 980px) {
+  .p-wan { padding: 10px 12px; }
+  .p-wan .p-head { margin-bottom: 7px; }
+  .p-wan .wan2-row { margin-top: 5px; padding: 3px 8px; }
+  .p-wan .vpn-block { margin-top: 4px; gap: 2px; }
+  .p-wan .br-v { font-size: 18px; }
+  .col > .p-events { min-height: 90px; }
+  .view-network .port-list li { min-height: 36px; }
+  .vmt-row { min-height: 50px; }
+  .view-clients .wall-grid { grid-auto-rows: 86px; }
+}
+
+/* ==========================================================================
+   事件历史（本地库回溯）
+   ========================================================================== */
+.mini-btn {
+  font: inherit; font-size: 10px; cursor: pointer;
+  padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-1);
+  color: var(--txt-2);
+  transition: 0.15s;
+}
+.mini-btn:hover { color: var(--cyan); border-color: var(--accent-line); background: var(--accent-soft); }
+
+.hist {
+  position: fixed; inset: 0; z-index: 72;
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+}
+.hist.open { display: flex; }
+.hist-card {
+  width: min(880px, 100%);
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: vpn-in 0.18s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+.hist-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.hist-title h3 { font-size: 16px; font-weight: 500; }
+.hist-title p { font-size: 10.5px; color: var(--txt-3); margin-top: 4px; font-family: var(--mono); }
+
+.hist-tools {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.hist-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-3); }
+.hist-seg button {
+  font: inherit; font-size: 10.5px; cursor: pointer;
+  padding: 4px 10px; border-radius: 6px;
+  border: none; background: transparent; color: var(--txt-2);
+}
+.hist-seg button.on {
+  background: var(--surface-1);
+  color: var(--cyan);
+  box-shadow: 0 1px 3px rgba(16, 44, 84, 0.1);
+}
+.hist-q {
+  flex: 1 1 160px; min-width: 120px;
+  font: inherit; font-size: 11px;
+  padding: 5px 10px; border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--txt);
+}
+.hist-q:focus { outline: none; border-color: var(--accent-line); background: var(--surface-1); }
+
+.hist-trend { padding: 12px 20px 4px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.ht-head { display: flex; justify-content: space-between; font-size: 10px; color: var(--txt-3); margin-bottom: 6px; }
+.ht-head i { font-style: normal; font-family: var(--mono); }
+#histChart { width: 100%; height: 84px; display: block; }
+.ht-legend { display: flex; gap: 12px; align-items: center; font-size: 9.5px; color: var(--txt-3); padding: 3px 0 6px; }
+.htl { display: inline-flex; align-items: center; gap: 4px; }
+.htl::before { content: ""; width: 10px; height: 2px; border-radius: 1px; background: currentColor; }
+.htl.down { color: var(--cyan); }
+.htl.up { color: var(--ok); }
+.htl-t { margin-left: auto; font-family: var(--mono); }
+
+.hist-list { flex: 1; overflow-y: auto; list-style: none; padding: 0 0 6px; }
+.hist-day {
+  display: flex; justify-content: space-between;
+  padding: 7px 20px 5px;
+  font-size: 10px; color: var(--txt-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0;
+  backdrop-filter: blur(4px);
+}
+.hist-day i { font-style: normal; font-family: var(--mono); }
+.hist-row {
+  display: grid;
+  grid-template-columns: 42px 38px minmax(0, 1fr) minmax(0, 36%);
+  gap: 10px; align-items: baseline;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.hist-row:hover { background: var(--surface-2); }
+.hr-t { font-family: var(--mono); font-size: 10px; color: var(--txt-3); }
+.hr-lv {
+  font-size: 9px; line-height: 15px; text-align: center;
+  border-radius: 4px; border: 1px solid var(--line); color: var(--txt-3);
+}
+.hist-row.warn .hr-lv { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft); }
+.hist-row.crit .hr-lv { color: var(--crit); border-color: var(--crit-line); background: var(--crit-soft); }
+.hr-x { font-size: 11.5px; color: var(--txt); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-d {
+  font-family: var(--mono); font-size: 9.5px; color: var(--txt-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hist-empty { padding: 44px 20px; text-align: center; color: var(--txt-3); font-size: 12px; }
+.hist-foot {
+  padding: 8px 20px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 9.5px; color: var(--txt-3);
+  font-family: var(--mono);
+  flex-shrink: 0;
+}
+
+@media (max-width: 860px) {
+  .hist { padding: 10px; }
+  .hist-row { grid-template-columns: 38px 34px minmax(0, 1fr); }
+  .hr-d { display: none; }
+  .hist-tools { padding: 8px 13px; }
+  .hist-head, .hist-trend { padding-left: 13px; padding-right: 13px; }
+}
+
+/* ==========================================================================
+   多页布局补充：状态带定高、各页面板撑满、终端统计条、算力表格
+   ========================================================================== */
+
+.statusband { min-height: 52px; flex-shrink: 0; }
+
+/* 网络页：端口 / 无线 / 延迟三块各自撑满单元格，内部滚动 */
+.view-network > .panel { min-height: 0; }
+
+/* 网络页的端口表：一行一口，10 个口（含 2 个 SFP+）把面板高度撑满，
+   列固定为 口 / 名称+设备名 / 链路类型 / 流量条 / 收发 / 错误包 */
+.view-network .port-list {
+  display: flex; flex-direction: column;
+  flex: 1; overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.view-network .port-list li {
+  display: grid;
+  grid-template-columns: 28px minmax(140px, 1fr) 92px 168px 92px 24px;
+  gap: 12px; align-items: center;
+  padding: 9px 6px;
+  border-bottom: 1px solid var(--grid-line);
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-height: 42px;
+  max-height: 68px;
+}
+.view-network .port-list li:last-child { border-bottom: none; }
+.view-network .port-list li.sfp { background: linear-gradient(90deg, var(--surface-2), transparent 60%); }
+.view-network .port-list li:hover { background: var(--surface-2); }
+
+.view-network .port-no {
+  width: 24px; height: 24px; border-radius: 6px;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  background: var(--ok-soft); color: var(--ok);
+  border: 1px solid var(--ok-line);
+}
+.view-network .port-list li.down .port-no {
+  background: var(--port-off-fill); color: var(--txt-3); border-color: var(--port-off-stroke);
+}
+.view-network .port-mid { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.view-network .port-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.view-network .port-name .pn-txt {
+  font-size: 12.5px; font-weight: 500; color: var(--txt-strong);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.view-network .port-list li.down .port-name .pn-txt { color: var(--txt-3); font-weight: 400; }
+.view-network .port-name em {
+  font-style: normal; font-family: var(--mono); font-size: 9.5px;
+  color: var(--txt-3); flex-shrink: 0;
+}
+.view-network .port-desc {
+  font-family: var(--mono); font-size: 9.5px; color: var(--txt-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.view-network .port-vlan {
+  font-family: var(--mono); font-size: 9.5px; color: var(--txt-2);
+  background: var(--surface-3); border-radius: 4px;
+  padding: 2px 6px; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.view-network .port-bars {
+  height: 6px; border-radius: 3px; background: var(--grid-line-2);
+  display: flex; gap: 1px; overflow: hidden;
+}
+.view-network .port-bars i { display: block; height: 100%; }
+.view-network .port-bars i.rx { background: var(--cyan); }
+.view-network .port-bars i.tx { background: var(--ok); }
+.view-network .port-rate {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  font-family: var(--mono); font-size: 10px; line-height: 1.25;
+}
+.view-network .port-rate b { color: var(--cyan); font-weight: 500; }
+.view-network .port-rate i { color: var(--ok); font-style: normal; }
+.view-network .port-rate.off { color: var(--txt-3); }
+.view-network .port-rate .idle { color: var(--txt-3); font-size: 10px; }
+.view-network .port-err {
+  font-family: var(--mono); font-size: 9.5px; color: var(--crit); text-align: right;
+}
+.view-network .ap-list { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+.view-network .probe-list {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-auto-rows: minmax(24px, auto);
+  gap: 0 10px;
+  overflow-y: auto;
+  align-content: start;
+  scrollbar-width: thin;
+}
+.view-network .probe-list li {
+  padding: 0 6px; font-size: 12px;
+  border-bottom: 1px solid var(--grid-line);
+}
+.view-network .probe-list li:last-child { border-bottom: none; }
+.view-network .probe-list li:hover { background: var(--surface-2); }
+.view-network .probe-list .pbar { display: block; flex: 1; }
+.view-network .probe-list .pr { width: 58px; font-size: 11px; }
+
+.ap-foot {
+  margin-top: 8px; padding-top: 7px;
+  border-top: 1px solid var(--line);
+  font-size: 10px; color: var(--txt-3);
+  font-family: var(--mono); flex-shrink: 0;
+}
+
+/* 算力页 */
+.view-compute .p-pve { min-height: 0; }
+.comp-note {
+  margin-top: auto; padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 10px; color: var(--txt-3);
+  font-family: var(--mono); line-height: 1.7;
+}
+.p-vmtable { min-height: 0; }
+
+/* ---------- 算力页：爱快主路由 ---------- */
+.p-ikuai { min-height: 0; }
+.view-compute .p-ikuai .gauge-row { gap: 18px; margin-bottom: 12px; }
+.view-compute .p-ikuai .g-k { font-size: 10.5px; }
+.view-compute .p-ikuai .g-v { font-size: 24px; line-height: 1.2; }
+.view-compute .p-ikuai .g-bar { height: 6px; }
+.view-compute .p-ikuai .meta-line {
+  font-size: 9.5px; line-height: 1.55; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.ik-sec { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.ik-h {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 10px; color: var(--txt-3); letter-spacing: 0.06em;
+}
+.ik-h i { font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: 0; }
+
+/* 每核一个数字块：核号在上、占用在下。路由器常年个位数占用，
+   细条在这个量级上基本看不见，数字更实在 */
+.ik-cores {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 5px;
+}
+.ik-core {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 5px 2px 4px; min-width: 0;
+  border-radius: 7px;
+  background: var(--surface-1); border: 1px solid var(--line);
+}
+.ik-ck {
+  font-size: 8.5px; color: var(--txt-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.ik-core em {
+  font-style: normal; font-family: var(--mono);
+  font-size: 11px; line-height: 1.2; color: var(--txt-strong);
+}
+.ik-core.hot { border-color: var(--crit-line); background: var(--crit-soft); }
+.ik-core.hot em { color: var(--crit); }
+.ik-empty { font-size: 9.5px; color: var(--txt-3); font-family: var(--mono); }
+
+.ik-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
+.iks {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+  padding: 7px 9px 6px; border-radius: 9px;
+  background: var(--surface-1); border: 1px solid var(--line);
+}
+.iks .k { font-size: 9px; color: var(--txt-3); letter-spacing: 0.04em; }
+.iks .v { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--txt-strong); }
+.iks .n {
+  font-family: var(--mono); font-size: 8.5px; color: var(--txt-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ik-wans { display: flex; flex-direction: column; gap: 5px; }
+/* 内网网段：段名 | 网关 IP | 实时收发 */
+.ik-segs { display: flex; flex-direction: column; gap: 4px; }
+.ik-seg {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center; gap: 8px; min-width: 0;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 10px;
+}
+.ik-seg:last-child { border-bottom: none; }
+.ik-sn { color: var(--txt-2); font-weight: 500; white-space: nowrap; }
+.ik-sip {
+  font-family: var(--mono); font-size: 9.5px; color: var(--txt-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ik-sw { font-family: var(--mono); font-size: 9px; color: var(--txt-2); white-space: nowrap; }
+.ik-wan {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  padding: 5px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-1);
+}
+.ik-wan.bad { border-color: var(--crit-line); background: var(--crit-soft); }
+.ik-wan .wan2-tag { font-size: 9px; padding: 0 5px; }
+.ik-wip {
+  flex: 1 1 auto; min-width: 0;
+  font-family: var(--mono); font-size: 9.5px; color: var(--txt-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ik-wbad { flex: 0 0 auto; font-size: 9px; color: var(--crit); }
+.ik-wr {
+  flex: 0 0 auto; white-space: nowrap;
+  font-family: var(--mono); font-size: 9px; color: var(--txt-3);
+}
+
+/* 路由卡底部的小趋势：在线终端数，跟着 PVE 那条趋势用同一批采样。
+   这块负责吃掉卡片剩下的高度，两块卡看起来就一样满。 */
+.ik-trend {
+  flex: 1 1 auto; min-height: 110px;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+}
+#ikChart { width: 100%; height: 0; min-height: 60px; flex: 1 1 auto; display: block; }
+.view-compute .p-ikuai .comp-note { margin-top: 12px; }
+
+.vmt-head, .vmt-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1.5fr) 50px 62px minmax(0, 1fr) 58px 84px 72px;
+  gap: 10px; align-items: center;
+}
+.vmt-head {
+  font-size: 9.5px; letter-spacing: 0.08em; color: var(--txt-3);
+  text-transform: uppercase;
+  padding: 0 8px 7px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.vmt-body {
+  flex: 1; overflow-y: auto; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
+}
+.vmt-row {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--grid-line);
+  font-size: 11.5px;
+  transition: background 0.14s;
+}
+.vmt-row:hover { background: var(--surface-2); }
+.vmt-row .vt-id { font-family: var(--mono); font-size: 10.5px; color: var(--txt-3); }
+.vmt-row .vt-name {
+  color: var(--txt-strong); font-weight: 500;
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vmt-row .vt-name i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--ok); flex-shrink: 0;
+}
+.vmt-row.stopped .vt-name { color: var(--txt-3); font-weight: 400; }
+.vmt-row.stopped .vt-name i { background: var(--txt-3); }
+.vmt-row .vt-kind {
+  font-size: 9.5px; font-family: var(--mono); color: var(--txt-3);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 0; text-align: center;
+}
+.vmt-row .vt-num { font-family: var(--mono); font-size: 10.5px; color: var(--txt-2); }
+.vmt-row .vt-cpu { color: var(--txt); }
+.vmt-mem { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vmt-mem span { font-family: var(--mono); font-size: 10px; color: var(--txt-2); }
+/* 窄屏这格放不下「0.44 / 1.1G · 41%」时，宁可截断也不折成两行把行高撑乱 */
+.vmt-mem span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmt-mem .g-bar { height: 3px; }
+.vmt-row .vt-net { font-family: var(--mono); font-size: 10.5px; color: var(--cyan); }
+.vmt-row .vt-net.zero { color: var(--txt-3); }
+.vmt-row .vt-up { font-family: var(--mono); font-size: 10px; color: var(--txt-3); }
+
+/* ---------- 终端统计条 ---------- */
+.summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+  min-width: 0;
+  flex-shrink: 0;
+}
+.sum-k {
+  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--txt-3); flex-shrink: 0;
+}
+.sum-v { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--txt); }
+.sum-n { font-family: var(--mono); font-size: 11px; color: var(--txt-3); margin-left: -6px; }
+.sum-cats {
+  display: flex; align-items: center; gap: 3px;
+  flex: 1; min-width: 0; overflow: hidden;
+  flex-wrap: nowrap;
+}
+.sumcat {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; color: var(--txt-2);
+  padding: 3px 9px; border-radius: 20px;
+  border: 1px solid transparent;
+  cursor: pointer; background: transparent;
+  font-family: inherit; white-space: nowrap;
+  transition: 0.14s;
+}
+.sumcat:hover { background: var(--surface-2); border-color: var(--line); color: var(--txt); }
+.sumcat i { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+.sumcat b { font-family: var(--mono); font-weight: 500; color: var(--txt); }
+.sumcat em {
+  font-style: normal; font-family: var(--mono);
+  font-size: 9px; color: var(--crit);
+}
+.sum-off {
+  font-size: 10.5px; color: var(--txt-3); font-family: var(--mono);
+  white-space: nowrap; flex-shrink: 0;
+}
+.sum-off b { color: var(--crit); font-weight: 500; }
+#sumMore { flex-shrink: 0; }
+
+/* 终端页搜索框 */
+.wall-q {
+  font: inherit; font-size: 11px;
+  padding: 4px 10px; border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--txt);
+  width: 180px; flex-shrink: 0;
+}
+.wall-q:focus { outline: none; border-color: var(--accent-line); background: var(--surface-1); }
+.wall-q::placeholder { color: var(--txt-3); }
+
+/* 终端页：整页给终端墙，不再限制 24vh */
+.view-clients .wall { max-height: none; height: 100%; }
+/* 终端页按「一类一行」横着铺：方块能做大，也避免 5 个竖列高低不齐留出大洞 */
+.view-clients .wall-body {
+  display: flex; flex-direction: column;
+  gap: 12px; overflow-y: auto;
+}
+.view-clients .wall-group {
+  display: flex; flex-direction: row; align-items: stretch;
+  gap: 16px; min-width: 0; flex-shrink: 0;
+}
+.view-clients .wall-gh {
+  width: 88px; flex-shrink: 0;
+  flex-direction: column; justify-content: center; align-items: flex-start;
+  gap: 3px; font-size: 11px; line-height: 1.4;
+}
+.view-clients .wall-gh b { font-size: 15px; color: var(--txt); }
+/* 一格一终端：图标 + 名称 / 完整 IP / 接在哪 + 实时速率。
+   名字和 IP 是主要信息，第三行放不下的都在悬浮提示和详情抽屉里。 */
+.view-clients .wall-grid {
+  flex: 1; min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
+  grid-auto-rows: 92px;
+  gap: 8px;
+}
+.view-clients .wall-cell {
+  height: 100%; border-radius: 11px;
+  flex-direction: column; align-items: stretch; justify-content: flex-start;
+  gap: 2px; padding: 9px 10px 8px;
+}
+.view-clients .wall-cell svg { width: 17px; height: 17px; }
+.view-clients .wall-cell.on::after { top: 7px; right: 8px; }
+
+.wc-h { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 10px; }
+.wc-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12px; color: var(--txt-strong); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wc-ip {
+  font-family: var(--mono); font-size: 10px; color: var(--txt-2);
+  letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wc-meta {
+  margin-top: auto;
+  font-size: 9.5px; color: var(--txt-3); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 状态点 / 底色是 ::before / ::after 画的，文字要压在它们上面 */
+.wall-cell > span { position: relative; z-index: 1; }
+.wall-empty { padding: 50px 20px; text-align: center; color: var(--txt-3); font-size: 12px; }
+
+/* 断点统一在文件前面的「响应式」段里维护，这里不再重复定义，避免互相覆盖 */
+
+/* 无线面板里的终端清单 */
+.ap-cl {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 7px; padding-top: 7px;
+  border-top: 1px dashed var(--line);
+}
+.ap-c {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10.5px; color: var(--txt-2); min-width: 0;
+}
+.ap-c i { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: var(--ok); }
+.ap-c i.s2 { background: var(--warn); }
+.ap-c i.s1 { background: var(--crit); }
+.ap-cn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-c em {
+  font-style: normal; font-family: var(--mono);
+  font-size: 9px; color: var(--txt-3); flex-shrink: 0;
+}
+.ap-c.more { color: var(--txt-3); font-size: 9.5px; font-family: var(--mono); }
+
+/* 网络页的 AP 卡压紧一点：四台要在 329px 里排完，不留滚动条 */
+.view-network .ap-list { gap: 4px; }
+.view-network .ap-item { padding: 5px 9px; }
+.view-network .ap-cl { margin-top: 5px; padding-top: 5px; gap: 2px; }
+.view-network .ap-c { font-size: 10px; }
+
+/* 算力页：左边 PVE 卡放大、右边表格行撑开，两边都把高度用满 */
+.view-compute .p-pve .gauge-row { gap: 22px; margin-bottom: 14px; }
+.view-compute .p-pve .g-k { font-size: 11px; }
+.view-compute .p-pve .g-v { font-size: 26px; line-height: 1.2; }
+.view-compute .p-pve .g-bar { height: 7px; }
+.view-compute .p-pve .meta-line { font-size: 10.5px; }
+.view-compute .store-mini { margin-top: 16px; gap: 6px; }
+.view-compute .store-mini .sm-row { font-size: 11px; }
+/* 算力页两张卡都撑满整列高度，底部那行说明钉在卡片下沿，中间空出来的地方留给曲线 */
+.view-compute .comp-note { margin-top: auto; }
+/* 趋势图吃掉 PVE 卡剩下的高度：原来固定 118px，卡撑满屏幕后会空一大块。
+   height:0 + flex-grow：画布高度由布局决定，不会被 canvas 自身属性高度反推着长。 */
+.view-compute .p-pve .pve-trend { flex: 1 1 auto; min-height: 168px; max-height: 380px; }
+.view-compute #pveChart { height: 0; min-height: 100px; flex: 1 1 auto; }
+
+.vmt-body { display: flex; flex-direction: column; }
+.vmt-row {
+  flex: 1 1 auto;
+  min-height: 58px;
+  max-height: 104px;
+  align-content: center;
+}
+/* 表格撑开时两条信息分上下排，别只在顶部挤一行 */
+.vmt-mem { gap: 5px; }
+.vmt-mem span:first-child { font-size: 10.5px; }
+
+/* 算力页：CPU / 内存 24 小时趋势 */
+.pve-trend {
+  margin-top: 16px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+  flex-shrink: 0;
+}
+.pve-trend .pt-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 10px; color: var(--txt-3); letter-spacing: 0.06em;
+}
+.pve-trend .pt-head i { font-style: normal; font-family: var(--mono); font-size: 9.5px; }
+#pveChart { width: 100%; height: 118px; display: block; }
+.pt-legend { display: flex; gap: 12px; font-size: 9.5px; color: var(--txt-3); }
+.ptl { display: inline-flex; align-items: center; gap: 4px; }
+.ptl::before { content: ""; width: 10px; height: 2px; border-radius: 1px; background: currentColor; }
+.ptl.cpu { color: var(--cyan); }
+.ptl.mem { color: var(--violet); }
+.ptl-peak {
+  margin-left: auto; font-family: var(--mono);
+  font-size: 9px; color: var(--txt-3); opacity: 0.85;
+}
+
+/* ==========================================================================
+   窄屏补丁：表格列模板在文件后半段才定义，所以断点覆盖必须写在它后面，
+   否则会被上面那条基础规则按源码顺序压掉（同优先级，后者生效）。
+   ========================================================================== */
+@media (max-width: 1360px) {
+  /* 三栏后表格窄了：固定列各收 6~10px，把宽度让给名称和内存，否则内存那格会折行 */
+  .vmt-head, .vmt-row {
+    grid-template-columns: 34px minmax(0, 1.4fr) 42px 52px minmax(0, 1fr) 52px 76px 62px;
+    gap: 7px;
+  }
+}
+
+/* ==========================================================================
+   室内环境：一个房间一张卡（温湿度大字 + PM2.5 / 甲醛等指标小标）
+   ========================================================================== */
+.env-list { display: flex; flex-direction: column; gap: 8px; }
+.env-card {
+  padding: 10px 12px; border-radius: 11px;
+  background: var(--surface-1); border: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.env-card.out { background: var(--surface-2); }
+.env-hd { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.env-nm { font-size: 12.5px; color: var(--txt); font-weight: 500; flex-shrink: 0; }
+.env-src {
+  font-family: var(--mono); font-size: 9px; color: var(--txt-3);
+  padding: 1px 6px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.env-card.out .env-src { background: var(--surface-1); }
+.env-t {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--mono); font-size: 19px; line-height: 1;
+  color: var(--txt); font-variant-numeric: tabular-nums;
+}
+.env-t i { font-style: normal; font-size: 10px; color: var(--txt-3); margin-left: 1px; }
+.env-kv { display: flex; flex-wrap: wrap; gap: 6px; }
+.env-chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 2px 7px; border-radius: 6px; font-size: 10px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--txt-3); white-space: nowrap;
+}
+.env-card.out .env-chip { background: var(--surface-1); }
+.env-chip b {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--txt-2); font-variant-numeric: tabular-nums;
+}
+.env-chip.warn { border-color: var(--warn-line); background: var(--warn-soft); }
+.env-chip.warn b { color: var(--warn); }
+.env-chip.crit { border-color: var(--crit); background: var(--crit-soft, var(--warn-soft)); }
+.env-chip.crit b { color: var(--crit); }
+/* 传感器这一轮没上报、显示的是上一次有效值 */
+.env-chip.stale {
+  color: var(--txt-3); border-style: dashed; background: transparent;
+  font-family: var(--mono); font-size: 9.5px;
+}
