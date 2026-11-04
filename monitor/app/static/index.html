@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homelab 状态看板</title>
+<style>
+  :root{
+    --bg:#0b0f14; --bg2:#111820; --card:#151d26; --card2:#1b2530;
+    --line:#243040; --txt:#e6edf3; --dim:#8b98a8; --dim2:#5f6d7e;
+    --ok:#34d399; --warn:#fbbf24; --crit:#f87171; --accent:#38bdf8; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 600px at 20% -10%, #16202b 0%, transparent 60%), var(--bg);
+    color:var(--txt); font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    min-height:100vh; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+  header.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  header.top h1{font-size:20px;font-weight:650;letter-spacing:.2px}
+  header.top .clock{color:var(--dim);font-size:13px;font-variant-numeric:tabular-nums}
+  .hint{color:var(--dim2);font-size:12px;margin-bottom:22px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+  .card{
+    background:linear-gradient(180deg,var(--card) 0%,var(--card2) 100%);
+    border:1px solid var(--line); border-radius:14px; padding:16px 18px 14px;
+    cursor:pointer; transition:border-color .18s,transform .18s,box-shadow .18s; position:relative; overflow:hidden;
+  }
+  .card:hover{border-color:#33506b;transform:translateY(-2px);box-shadow:0 10px 30px -18px #000}
+  .card.active{border-color:var(--accent);box-shadow:0 0 0 1px #38bdf855,0 10px 30px -18px #000}
+  .card-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim2);flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px #34d39922}
+  .dot.off{background:var(--crit);box-shadow:0 0 0 3px #f8717122}
+  .card h2{font-size:15px;font-weight:600;letter-spacing:.2px}
+  .card .sub{color:var(--dim2);font-size:11px;margin-left:auto;text-align:right;line-height:1.3;max-width:52%}
+  .hero{display:flex;align-items:flex-start;gap:6px;margin:10px 0 4px}
+  .hero .num{font-size:42px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+  .hero .unit{font-size:14px;color:var(--dim);margin-top:6px}
+  .hero .lbl{font-size:11px;color:var(--dim2);margin-top:8px;margin-left:4px}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .crit{color:var(--crit)} .muted{color:var(--dim)}
+  .rows{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:12px 0 10px}
+  .rows div{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px dashed #1e2836}
+  .rows label{color:var(--dim)}
+  .rows b{font-weight:550;font-variant-numeric:tabular-nums}
+  .card footer{display:flex;justify-content:space-between;color:var(--dim2);font-size:11px;margin-top:6px}
+  .bars{display:flex;gap:3px;margin-top:10px}
+  .bars i{height:4px;flex:1;border-radius:2px;background:#1e2836}
+  .bars i.on{background:var(--accent)}
+  .empty{color:var(--dim2);text-align:center;padding:60px 20px;font-size:13px}
+  /* 详情 */
+  #panel{margin-top:26px;border:1px solid var(--line);border-radius:16px;background:var(--card);padding:20px 22px 22px;display:none}
+  #panel.show{display:block}
+  .panel-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .panel-head h3{font-size:16px;font-weight:600}
+  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-left:auto}
+  .seg button{background:transparent;border:0;color:var(--dim);font-size:12px;padding:6px 13px;cursor:pointer;font-family:inherit}
+  .seg button:hover{color:var(--txt)}
+  .seg button.on{background:#1d2b3a;color:var(--accent)}
+  .chart-box{position:relative;width:100%}
+  canvas{width:100%;height:270px;display:block}
+  .legend{display:flex;gap:18px;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .swatch{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:20px}
+  .box{background:#111924;border:1px solid #1d2836;border-radius:11px;padding:13px 15px}
+  .box h4{font-size:12px;color:var(--dim);font-weight:500;margin-bottom:10px;letter-spacing:.4px}
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0}
+  .kv label{color:var(--dim)}
+  .kv b{font-weight:550;font-variant-numeric:tabular-nums}
+  .disk{margin-bottom:9px}
+  .disk .top{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}
+  .disk .top span{color:var(--dim)}
+  .track{height:6px;background:#1a2432;border-radius:3px;overflow:hidden}
+  .track i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+  .track i.warn{background:var(--warn)} .track i.crit{background:var(--crit)}
+  @media (max-width:640px){
+    .hero .num{font-size:36px}
+    .rows{grid-template-columns:1fr}
+    .card .sub{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Homelab 状态看板</h1>
+    <span class="clock" id="clock">--:--:--</span>
+  </header>
+  <p class="hint">每 30 秒自动刷新 · 点击设备卡片查看历史曲线</p>
+
+  <div class="grid" id="grid"><div class="empty">正在加载…</div></div>
+
+  <section id="panel">
+    <div class="panel-head">
+      <h3 id="panel-title">设备详情</h3>
+      <div class="seg" id="seg">
+        <button data-h="6">6 小时</button>
+        <button data-h="24" class="on">24 小时</button>
+        <button data-h="168">7 天</button>
+      </div>
+    </div>
+    <div class="legend" id="legend">
+      <span><i class="swatch" style="background:#38bdf8"></i>CPU 温度</span>
+      <span><i class="swatch" style="background:#a78bfa"></i>NVMe 温度</span>
+    </div>
+    <div class="chart-box"><canvas id="chart"></canvas></div>
+    <div class="cols">
+      <div class="box"><h4>当前指标</h4><div id="metrics"></div></div>
+      <div class="box"><h4>存储</h4><div id="disks"></div></div>
+      <div class="box" id="guests-box" style="display:none"><h4>虚拟机 / 容器</h4><div id="guests"></div></div>
+      <div class="box"><h4>硬件</h4><div id="hw"></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { devices: [], sel: null, hours: 24 };
+
+const fmtBytes = n => {
+  if (n == null) return '—';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0, v = Number(n);
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ' + u[i];
+};
+const fmtDur = s => {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d > 0) return d + ' 天 ' + h + ' 小时';
+  if (h > 0) return h + ' 小时 ' + m + ' 分';
+  return m + ' 分钟';
+};
+const ago = ts => {
+  if (!ts) return '从未上报';
+  const d = Math.floor(Date.now() / 1000) - ts;
+  if (d < 60) return d + ' 秒前';
+  if (d < 3600) return Math.floor(d / 60) + ' 分钟前';
+  if (d < 86400) return Math.floor(d / 3600) + ' 小时前';
+  return Math.floor(d / 86400) + ' 天前';
+};
+const tcls = t => t == null ? 'muted' : (t >= 80 ? 'crit' : t >= 70 ? 'warn' : 'ok');
+const T = n => n == null ? '—' : Number(n).toFixed(0) + '°';
+
+async function api(p) {
+  const r = await fetch(p, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function card(d) {
+  const L = d.latest;
+  const det = L ? (L.detail || {}) : {};
+  const cpuT = L ? L.cpu_temp : null;
+  const hasTemp = cpuT != null && cpuT > 0;
+  const usage = L && L.cpu_usage != null ? Number(L.cpu_usage) : null;
+  const mainVal = hasTemp ? Number(cpuT).toFixed(0) : (usage != null ? usage.toFixed(0) : '--');
+  const mainUnit = hasTemp ? '°C' : '%';
+  const mainLabel = hasTemp ? 'CPU 温度' : 'CPU 使用率';
+  const mainCls = hasTemp ? tcls(cpuT) : 'muted';
+  const memPct = L && L.mem_total ? (L.mem_used / L.mem_total * 100) : null;
+  const disks = (L && L.disks) || [];
+  const v1 = disks.find(x => x.mount === '/vol1') || disks[0];
+  const meta = d.meta || {};
+  const pve = det.pve || null;
+  const bars = [1,2,3,4,5,6,7,8].map(i => {
+    const on = memPct != null && memPct > i * 12.5 ? 'on' : '';
+    return `<i class="${on}"></i>`;
+  }).join('');
+  const slot2 = pve
+    ? `<div><label>虚机</label><b class="${pve.guests_running === pve.guests_total ? 'ok' : 'warn'}">${pve.guests_running}/${pve.guests_total}</b></div>`
+    : `<div><label>PCH</label><b class="${tcls(L && L.pch_temp)}">${T(L && L.pch_temp)}</b></div>`;
+
+  return `<article class="card ${state.sel === d.id ? 'active' : ''}" data-id="${d.id}">
+    <div class="card-head">
+      <span class="dot ${d.online ? 'on' : 'off'}"></span>
+      <h2>${d.name}</h2>
+      <span class="sub">${meta.model || ''}</span>
+    </div>
+    <div class="hero">
+      <span class="num ${mainCls}">${mainVal}</span>
+      <span class="unit">${mainUnit}</span>
+      <span class="lbl">${mainLabel}</span>
+    </div>
+    <div class="rows">
+      <div><label>NVMe</label><b class="${tcls(L && L.nvme_temp)}">${T(L && L.nvme_temp)}</b></div>
+      ${slot2}
+      <div><label>负载</label><b>${L && L.load1 != null ? Number(L.load1).toFixed(2) : '—'}</b></div>
+      <div><label>CPU 用量</label><b>${usage != null ? usage.toFixed(0) + '%' : '—'}</b></div>
+      <div><label>内存</label><b>${memPct == null ? '—' : memPct.toFixed(0) + '%'}</b></div>
+      <div><label>运行</label><b>${fmtDur(L && L.uptime)}</b></div>
+    </div>
+    <div class="bars">${bars}</div>
+    <footer>
+      <span>${v1 ? v1.mount + ' ' + v1.pct + '%' : '无卷信息'}</span>
+      <span>${ago(L && L.ts)}</span>
+    </footer>
+  </article>`;
+}
+
+function renderGrid() {
+  const g = $('#grid');
+  if (!state.devices.length) { g.innerHTML = '<div class="empty">暂无设备。等待设备首次上报…</div>'; return; }
+  g.innerHTML = state.devices.map(card).join('');
+  g.querySelectorAll('.card').forEach(el => {
+    el.onclick = () => {
+      const id = el.dataset.id;
+      state.sel = (state.sel === id) ? null : id;
+      renderGrid();
+      if (state.sel) loadDetail(); else $('#panel').classList.remove('show');
+    };
+  });
+}
+
+async function load() {
+  try {
+    const d = await api('/api/devices');
+    state.devices = d.devices || [];
+    renderGrid();
+    if (state.sel) loadDetail(true);
+  } catch (e) {
+    $('#grid').innerHTML = '<div class="empty">无法连接服务：' + e.message + '</div>';
+  }
+  $('#clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+async function loadDetail(silent) {
+  const d = state.devices.find(x => x.id === state.sel);
+  if (!d) return;
+  $('#panel').classList.add('show');
+  $('#panel-title').textContent = d.name + ' · 近 ' + (state.hours >= 168 ? '7 天' : state.hours + ' 小时');
+  const hasT = d.latest && d.latest.cpu_temp != null && d.latest.cpu_temp > 0;
+  $('#legend').innerHTML = hasT
+    ? '<span><i class="swatch" style="background:#38bdf8"></i>CPU 温度</span><span><i class="swatch" style="background:#a78bfa"></i>NVMe 温度</span>'
+    : '<span><i class="swatch" style="background:#38bdf8"></i>CPU 使用率</span><span style="color:#5f6d7e">该设备无温度传感器</span>';
+  renderMetrics(d);
+  try {
+    const h = await api(`/api/devices/${encodeURIComponent(d.id)}/history?hours=${state.hours}`);
+    drawChart($('#chart'), h.points || []);
+  } catch (e) {
+    if (!silent) console.warn(e);
+  }
+}
+
+function renderMetrics(d) {
+  const L = d.latest;
+  const det = L ? (L.detail || {}) : {};
+  const cpu = det.cpu || {}, mem = det.mem || {}, temps = det.temps || {};
+  const rows = [
+    ['CPU 温度', T(L && L.cpu_temp)],
+    ['CPU 核心温度', (temps.cpu_cores || []).map(x => Number(x).toFixed(0) + '°').join(' / ') || '—'],
+    ['NVMe 温度', T(L && L.nvme_temp)],
+    ['主板温度', T(L && L.board_temp)],
+    ['PCH 温度', T(L && L.pch_temp)],
+    ['无线网卡', T(L && L.wifi_temp)],
+    ['负载 1/5/15', L ? [L.load1, L.load5, L.load15].map(x => x == null ? '-' : Number(x).toFixed(2)).join(' / ') : '—'],
+    ['CPU 用量', L && L.cpu_usage != null ? Number(L.cpu_usage).toFixed(1) + '%' : '—'],
+    ['内存', L && L.mem_total ? `${fmtBytes(L.mem_used)} / ${fmtBytes(L.mem_total)}` : '—'],
+    ['Swap', L && L.swap_total ? `${fmtBytes(L.swap_used)} / ${fmtBytes(L.swap_total)}` : '—'],
+    ['运行时长', fmtDur(L && L.uptime)],
+  ];
+  $('#metrics').innerHTML = rows.map(([k, v]) => `<div class="kv"><label>${k}</label><b>${v}</b></div>`).join('');
+
+  const disks = (L && L.disks) || [];
+  $('#disks').innerHTML = disks.length ? disks.map(x => {
+    const cls = x.pct >= 90 ? 'crit' : x.pct >= 75 ? 'warn' : '';
+    return `<div class="disk">
+      <div class="top"><span>${x.mount}</span><b>${x.pct}%</b></div>
+      <div class="track"><i class="${cls}" style="width:${Math.min(100, x.pct)}%"></i></div>
+      <div class="top" style="margin-top:4px;color:var(--dim2)"><span>${fmtBytes(x.used)} / ${fmtBytes(x.total)}</span></div>
+    </div>`;
+  }).join('') : '<div class="kv"><label>无数据</label></div>';
+
+  const meta = d.meta || {};
+  const hw = [
+    ['机型', meta.model || '—'],
+    ['CPU', meta.cpu || (cpu.model || '—')],
+    ['核心数', cpu.cores || '—'],
+    ['内核', meta.kernel || '—'],
+  ];
+  if (meta.pve) hw.splice(1, 0, ['PVE 版本', meta.pve]);
+  $('#hw').innerHTML = hw.map(([k, v]) => `<div class="kv"><label>${k}</label><b>${v}</b></div>`).join('');
+
+  // PVE 虚机列表（仅 Proxmox 宿主机有 det.pve）
+  const pve = det.pve;
+  const gbox = $('#guests-box');
+  if (pve && (pve.guests || []).length) {
+    gbox.style.display = '';
+    const head = `<div class="kv"><label>运行中内存</label><b>${fmtBytes(pve.mem_alloc)}</b></div>
+      <div class="kv"><label>已分配 vCPU</label><b>${pve.vcpu_alloc || '—'}</b></div>`;
+    const items = (pve.guests || []).map(g => {
+      const on = g.status === 'running';
+      const tag = g.type === 'ct' ? 'CT' : 'VM';
+      return `<div class="kv"><label>${g.vmid} · ${g.name || '-'}</label>
+        <b class="${on ? 'ok' : 'muted'}">${tag} ${on ? fmtBytes(g.mem) : '已停止'}</b></div>`;
+    }).join('');
+    $('#guests').innerHTML = head + items;
+  } else {
+    gbox.style.display = 'none';
+    $('#guests').innerHTML = '';
+  }
+}
+
+function drawChart(cv, pts) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = 270;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const padL = 42, padR = 16, padT = 14, padB = 26;
+  const iw = w - padL - padR, ih = h - padT - padB;
+
+  if (!pts.length) {
+    ctx.fillStyle = '#5f6d7e'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('该时间段暂无数据', w / 2, h / 2);
+    return;
+  }
+
+  // 时间范围
+  const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
+  const span = Math.max(1, t1 - t0);
+
+  // 主指标：有温度画温度，没有（如虚拟机）画 CPU 使用率
+  const hasTemp = pts.some(p => p.cpu_temp != null && p.cpu_temp > 0);
+  const k1 = hasTemp ? 'cpu_temp' : 'cpu_usage';
+  const k2 = hasTemp ? 'nvme_temp' : null;
+
+  let tmin = 1e9, tmax = -1e9;
+  for (const p of pts) {
+    for (const k of [k1, k2]) {
+      if (!k) continue;
+      const v = p[k];
+      if (v != null) { tmin = Math.min(tmin, v); tmax = Math.max(tmax, v); }
+    }
+  }
+  if (tmin > tmax) { tmin = 30; tmax = 70; }
+  const pad = Math.max(4, (tmax - tmin) * 0.18);
+  tmin = hasTemp ? Math.max(0, tmin - pad) : 0;
+  tmax = hasTemp ? tmax + pad : Math.max(100, tmax + pad);
+  const ty = v => padT + ih - (v - tmin) / (tmax - tmin) * ih;
+  const tx = t => padL + (t - t0) / span * iw;
+
+  // 网格
+  ctx.strokeStyle = '#1c2634'; ctx.lineWidth = 1;
+  ctx.font = '10.5px system-ui'; ctx.fillStyle = '#5f6d7e'; ctx.textAlign = 'right';
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = tmin + (tmax - tmin) * i / steps;
+    const y = ty(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText(v.toFixed(0) + (hasTemp ? '°' : '%'), padL - 8, y + 3.5);
+  }
+
+  // X 轴时间标签
+  ctx.textAlign = 'center';
+  const xsteps = Math.min(6, Math.max(2, Math.floor(iw / 110)));
+  for (let i = 0; i <= xsteps; i++) {
+    const t = t0 + span * i / xsteps;
+    const x = tx(t);
+    const d = new Date(t * 1000);
+    const lbl = state.hours >= 168
+      ? `${d.getMonth() + 1}/${d.getDate()}`
+      : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    ctx.fillStyle = '#5f6d7e';
+    ctx.fillText(lbl, x, h - 8);
+  }
+
+  // 折线
+  const line = (key, color, width) => {
+    ctx.beginPath();
+    let started = false;
+    for (const p of pts) {
+      const v = p[key];
+      if (v == null) { started = false; continue; }
+      const x = tx(p.ts), y = ty(v);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+
+  line(k1, '#38bdf8', 2);
+  if (k2) line(k2, '#a78bfa', 1.6);
+
+  // 渐变填充（主曲线）
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + ih);
+  grad.addColorStop(0, 'rgba(56,189,248,0.18)');
+  grad.addColorStop(1, 'rgba(56,189,248,0)');
+  ctx.beginPath();
+  let sx = null;
+  for (const p of pts) {
+    if (p[k1] == null) continue;
+    const x = tx(p.ts), y = ty(p[k1]);
+    if (sx === null) { sx = x; ctx.moveTo(x, padT + ih); ctx.lineTo(x, y); }
+    else ctx.lineTo(x, y);
+  }
+  if (sx !== null) {
+    ctx.lineTo(tx(pts[pts.length - 1].ts), padT + ih);
+    ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+  }
+
+  // 最后一个点
+  const last = pts[pts.length - 1];
+  if (last[k1] != null) {
+    const x = tx(last.ts), y = ty(last[k1]);
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#38bdf8'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(56,189,248,0.18)'; ctx.fill();
+  }
+}
+
+// 范围切换
+$('#seg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  state.hours = Number(b.dataset.h);
+  $('#seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  loadDetail();
+});
+
+load();
+setInterval(load, 30000);
+window.addEventListener('resize', () => {
+  if (state.sel) loadDetail(true);
+});
+</script>
+</body>
+</html>

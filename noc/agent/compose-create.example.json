@@ -1,0 +1,19 @@
+{
+  "_readme": [
+    "极空间 NAS 采集端容器创建参数模板。",
+    "",
+    "用途：在极空间上以 Docker 方式跑 nas_net_agent.py，读取宿主机网卡计数",
+    "并定时上报给 NOC，用来补上二层直连流量的盲区。",
+    "",
+    "用法：复制本文件为 compose-create.local.json，替换所有占位符后使用。",
+    "compose-create.local.json 已被 .gitignore 忽略（*.local.*）。",
+    "",
+    "NOC_TOKEN 必须与 NOC 侧 .env 里的 NAS_REPORT_TOKEN 完全一致。",
+    "生成一个随机令牌： python -c \"import secrets;print(secrets.token_hex(16))\""
+  ],
+  "action": "create",
+  "project_name": "nas-net-agent",
+  "path": "/YOUR/NAS/PATH/nas-net-agent",
+  "start": true,
+  "config": "services:\n  nas-net-agent:\n    image: python:3.12-alpine\n    container_name: nas-net-agent\n    restart: unless-stopped\n    network_mode: host\n    environment:\n      NOC_URL: 'http://192.168.X.X:8940'\n      NOC_TOKEN: 'YOUR_NOC_REPORT_TOKEN_HERE'\n      INTERVAL: '5'\n      PRIMARY_IFACE: 'bond0'\n      NAS_NAME: 'YOUR_NAS_NAME'\n    volumes:\n      - /YOUR/NAS/PATH/nas-net-agent:/app:ro\n    command:\n      - python\n      - -u\n      - /app/nas_net_agent.py\n"
+}

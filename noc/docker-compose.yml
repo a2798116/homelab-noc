@@ -1,0 +1,18 @@
+services:
+  noc:
+    build: .
+    image: homelab-noc:1.0
+    container_name: homelab-noc
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app:ro
+      - ./data:/data
+      - /vol1:/vol1:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

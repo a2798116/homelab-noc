@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#070a0f">
+<title>YY&amp;YB Home Lab · NOC</title>
+<script>
+  // 主题要在首屏渲染前定下来，否则会白/黑闪一下
+  (function () {
+    try {
+      // ?theme=light|dark 优先，方便截图自检和分享固定主题的链接
+      var q = null;
+      try { q = new URLSearchParams(location.search).get('theme'); } catch (e2) { /* 老浏览器忽略 */ }
+      var t = (q === 'light' || q === 'dark') ? q : localStorage.getItem('noc-theme');
+      if (t !== 'light' && t !== 'dark') {
+        // 没选过就跟随系统：系统是浅色就别一上来糊一脸黑
+        t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+          ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* 隐私模式下 localStorage 会抛错 */ }
+  })();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="brand">
+      <span class="logo">Y²</span>
+      <div class="brand-txt">
+        <h1>YY&amp;YB Home Lab</h1>
+        <p>全屋网络与算力 · 实时态势</p>
+      </div>
+    </div>
+
+    <div class="top-stats">
+      <button class="stat health-stat" id="healthBox" title="点击查看问题清单">
+        <span class="k">全屋健康</span>
+        <span class="v" id="healthScore">—</span>
+      </button>
+      <div class="stat">
+        <span class="k">外网</span>
+        <span class="v" id="wanState">—</span>
+      </div>
+      <div class="stat">
+        <span class="k">在线设备</span>
+        <span class="v"><b id="onlineCount">—</b><i id="knownCount">/—</i></span>
+      </div>
+      <div class="stat">
+        <span class="k">连接数</span>
+        <span class="v" id="connCount">—</span>
+      </div>
+      <div class="stat rate-stat">
+        <span class="k">外网吞吐</span>
+        <span class="v"><b class="up" id="wanUp">—</b><em>↑</em><b class="down" id="wanDown">—</b><em>↓</em></span>
+      </div>
+    </div>
+
+    <div class="clock">
+      <b id="clock">--:--:--</b>
+      <span id="date">—</span>
+    </div>
+
+    <button class="theme-btn" id="themeBtn" title="切换明暗主题（T）" aria-label="切换主题">
+      <svg class="ic-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+      <svg class="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>
+    </button>
+    <button class="theme-btn" id="fsBtn" title="全屏挂墙（F）" aria-label="全屏">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </header>
+
+  <section class="statusband" id="statusBand">
+    <div class="sb-grp">
+      <div class="sbi clickable" data-sheet="env" title="点击查看全部温湿度传感器">
+        <span class="sb-k">室内</span>
+        <b class="sb-v" id="sbTemp">—</b>
+        <i class="sb-n" id="sbHum">—</i>
+      </div>
+      <div class="sbi">
+        <span class="sb-k">室外</span>
+        <b class="sb-v" id="sbOutdoor">—</b>
+        <i class="sb-n" id="sbWeather">—</i>
+      </div>
+    </div>
+
+    <div class="sb-grp sb-mid">
+      <div class="sbi clickable" data-sheet="lights" id="sbiLights" title="点击查看哪盏灯亮着">
+        <span class="sb-k">灯光</span>
+        <b class="sb-v" id="sbLights">—</b>
+        <i class="sb-go">›</i>
+      </div>
+      <div class="sbi clickable" data-sheet="climate" title="点击查看空调状态">
+        <span class="sb-k">空调</span>
+        <b class="sb-v" id="sbAc">—</b>
+        <i class="sb-go">›</i>
+      </div>
+      <div class="sbi clickable" data-sheet="openings" id="sbiOpen" title="点击查看门窗 / 窗帘 / 人体">
+        <span class="sb-k">门窗</span>
+        <b class="sb-v" id="sbOpen">—</b>
+        <i class="sb-go">›</i>
+      </div>
+      <div class="sbi clickable" data-sheet="presence" title="点击查看人体存在传感器">
+        <span class="sb-k">有人</span>
+        <b class="sb-v" id="sbPresence">—</b>
+        <i class="sb-go">›</i>
+      </div>
+    </div>
+
+    <div class="sb-grp sb-end">
+      <div class="sbi">
+        <span class="sb-k">无线</span>
+        <b class="sb-v" id="sbWifi">—</b>
+      </div>
+      <div class="sbi">
+        <span class="sb-k">在家</span>
+        <b class="sb-v" id="sbHome">—</b>
+      </div>
+      <div class="sbi">
+        <span class="sb-k">内网流量</span>
+        <b class="sb-v" id="sbL2">—</b>
+        <i class="sb-n" id="sbL2Note">NAS 网卡实测</i>
+      </div>
+      <div class="sbi sbi-ha">
+        <span class="sb-k">HA 中枢</span>
+        <b class="sb-v" id="sbHa">—</b>
+      </div>
+    </div>
+  </section>
+
+  <aside class="col left">
+    <section class="panel p-wan">
+      <div class="p-head"><h2>外网链路</h2><span class="badge" id="wanBadge">—</span></div>
+      <div class="ip-row">
+        <span class="ip" id="wanIp">—</span>
+        <span class="uptime" id="wanUptime">—</span>
+      </div>
+      <div class="big-rate">
+        <div class="br">
+          <span class="br-k">下行</span>
+          <span class="br-v down" id="wanDownBig">—</span>
+        </div>
+        <div class="br">
+          <span class="br-k">上行</span>
+          <span class="br-v up" id="wanUpBig">—</span>
+        </div>
+      </div>
+      <canvas id="wanChart" height="56"></canvas>
+      <div class="chart-legend"><span class="lg down">下行</span><span class="lg up">上行</span><span class="lg-t">近 2 分钟</span></div>
+    </section>
+
+    <section class="panel p-ports">
+      <div class="p-head"><h2>交换机端口</h2><span class="hint" id="portHint">—</span></div>
+      <ul class="port-list" id="portList"></ul>
+      <div class="port-foot" id="portFoot">—</div>
+    </section>
+
+    <section class="panel p-probe">
+      <div class="p-head"><h2>节点延迟</h2><span class="hint">TCP RTT</span></div>
+      <ul class="probe-list" id="probeList"></ul>
+      <div class="probe-foot" id="probeFoot">—</div>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <div class="stage-head">
+      <div class="sh-left"><h2>物理拓扑</h2><span class="hint">链路数值 = 交换机端口实测流量 · 光点速度随流量变化</span></div>
+      <div class="legend">
+        <span class="lg-item"><i class="ln wan"></i>外网</span>
+        <span class="lg-item"><i class="ln lan"></i>千兆主干</span>
+        <span class="lg-item"><i class="ln hairpin"></i>发卡弯回程</span>
+        <span class="lg-item"><i class="ln bypass"></i>二层旁路</span>
+      </div>
+    </div>
+    <svg id="topo" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet"></svg>
+  </main>
+
+  <aside class="col right">
+    <section class="panel p-pve">
+      <div class="p-head"><h2>PVE 8505</h2><span class="badge" id="pveBadge">—</span></div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <span class="g-k">CPU</span>
+          <span class="g-v" id="pveCpu">—</span>
+          <span class="g-bar"><i id="pveCpuBar"></i></span>
+        </div>
+        <div class="gauge">
+          <span class="g-k">内存</span>
+          <span class="g-v" id="pveMem">—</span>
+          <span class="g-bar"><i id="pveMemBar"></i></span>
+        </div>
+      </div>
+      <div class="meta-line" id="pveMeta">—</div>
+      <ul class="vm-list" id="vmList"></ul>
+      <div class="store-mini">
+        <div class="sm-row"><span>FN-Lab /vol1</span><b id="volText">—</b></div>
+        <span class="g-bar"><i id="volBar"></i></span>
+        <div class="sm-row"><span>PVE rootfs</span><b id="rootText">—</b></div>
+        <span class="g-bar"><i id="rootBar"></i></span>
+      </div>
+    </section>
+
+    <section class="panel p-wifi">
+      <div class="p-head"><h2>无线覆盖</h2><span class="badge" id="wifiBadge">—</span></div>
+      <div class="ap-list" id="apList"></div>
+    </section>
+
+    <section class="panel p-events">
+      <div class="p-head"><h2>事件流</h2><span class="hint" id="eventHint">—</span></div>
+      <ul class="event-list" id="eventList"></ul>
+    </section>
+  </aside>
+
+  <section class="wall">
+    <div class="wall-head">
+      <h2>全屋终端墙</h2>
+      <div class="wall-filter" id="wallFilter"></div>
+      <span class="hint">亮 = 在线 · 暗 = 离线 · 点击查看详情</span>
+    </div>
+    <div class="wall-body" id="wallBody"></div>
+  </section>
+
+</div>
+
+<!-- 设备详情 -->
+<div class="drawer" id="drawer">
+  <div class="drawer-card">
+    <button class="drawer-close" id="drawerClose">×</button>
+    <div id="drawerBody"></div>
+  </div>
+</div>
+
+<!-- 全屋智能明细：灯光 / 门窗 / 空调 / 人体 -->
+<div class="sheet" id="sheet">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <div class="sheet-title">
+        <h3 id="sheetTitle">—</h3>
+        <p id="sheetSub">—</p>
+      </div>
+      <button class="sheet-close" id="sheetClose" aria-label="关闭">×</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+</div>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-router" viewBox="0 0 24 24"><rect x="2" y="13" width="20" height="7" rx="2"/><path d="M6 13V9M12 13V7M18 13V9"/><circle cx="5.5" cy="16.5" r="0.6" fill="currentColor" stroke="none"/><circle cx="8" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-switch" viewBox="0 0 24 24"><rect x="2" y="9" width="20" height="7" rx="2"/><path d="M6 13h1M9.5 13h1M13 13h1M16.5 13h1"/></symbol>
+  <symbol id="i-ap" viewBox="0 0 24 24"><circle cx="12" cy="16" r="2"/><path d="M7.5 11.5a6 6 0 0 1 9 0M4.5 8.5a10 10 0 0 1 15 0"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M6.5 7.5h.01M6.5 16.5h.01"/></symbol>
+  <symbol id="i-vm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2" stroke-dasharray="3 2.5"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-nas" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M5 9h14M5 15h14M15 6h1M15 12h1"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="6" width="14" height="11" rx="2"/><path d="M17 10l4-2v8l-4-2"/><circle cx="9" cy="11.5" r="2"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9V17h7v-3.1A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-sensor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="4"/><circle cx="12" cy="9" r="2.5"/><path d="M9 16h6"/></symbol>
+  <symbol id="i-printer" viewBox="0 0 24 24"><path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="8" rx="2"/><rect x="7" y="14" width="10" height="7" rx="1"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 5.5h3"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="10" rx="1.5"/><path d="M2 18h20"/></symbol>
+  <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/></symbol>
+  <symbol id="i-ac" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="7" rx="2"/><path d="M6 16c0 1.5 1 1.5 1 3M12 16c0 1.5 1 1.5 1 3M18 16c0 1.5 1 1.5 1 3"/></symbol>
+  <symbol id="i-fridge" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 9h12M9 5v2M9 12v2"/></symbol>
+  <symbol id="i-washer" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="14" r="4.5"/><path d="M7 6h.01M11 6h.01"/></symbol>
+  <symbol id="i-fryer" viewBox="0 0 24 24"><path d="M4 10h16v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z"/><path d="M8 10V5a4 4 0 0 1 8 0v5"/></symbol>
+  <symbol id="i-fish" viewBox="0 0 24 24"><path d="M3 12c3-4 7-5 11-3.5l4-2.5-1 4 4 0-4 4 1 4-4-2.5C10 19 6 17 3 12z"/><circle cx="8" cy="11" r="0.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-gateway" viewBox="0 0 24 24"><path d="M12 2.5l8.5 5v9L12 21.5 3.5 16.5v-9z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.2 2.4c-.5.2-.7.6-.7 1.1v.8"/><circle cx="12" cy="17" r="0.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-curtain" viewBox="0 0 24 24"><path d="M3 4h18M6 4v16M18 4v16"/><path d="M6 4c2 2 2 5 2 8s0 6-2 8"/><path d="M18 4c-2 2-2 5-2 8s0 6 2 8"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M4 21V4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v17"/><path d="M2 21h20"/><circle cx="15.5" cy="12" r="1"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.6"/><path d="M4.5 21c0-4.1 3.4-7.4 7.5-7.4s7.5 3.3 7.5 7.4"/></symbol>
+  <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5L22 20H2z"/><path d="M12 9.5v4.5M12 17.2v.01"/></symbol>
+</svg>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

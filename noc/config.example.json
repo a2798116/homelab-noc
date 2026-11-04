@@ -1,0 +1,69 @@
+{
+  "_readme": [
+    "站点配置模板 —— 复制为同目录下的 config.local.json 后按自己的网络填写。",
+    "",
+    "1. config.local.json 已列入 .gitignore，不会被提交，可以放心填写真实地址。",
+    "2. 文件不存在时程序照常启动：终端墙为空、拓扑显示通用标签、无探测目标。",
+    "3. 所有形如 192.168.X.X 的占位符都要替换成你自己的地址。",
+    "4. devices 里的 icon 可选：router switch ap gateway vm server nas printer desktop",
+    "   laptop phone camera bulb sensor speaker fridge washer ac fryer fish device",
+    "   tv tablet watch plug。cat 可选：infra net media smart client。",
+    "5. switch.ports 的 node 必须是前端拓扑节点 key：apsub / apmain / pve / ikuai，",
+    "   null 表示该口空置或不对应拓扑节点。"
+  ],
+
+  "site": {
+    "name": "Homelab NOC",
+    "subnet": "192.168.X.0/24",
+    "nas_ip": "192.168.X.30"
+  },
+
+  "switch": {
+    "ports": {
+      "1": { "role": "子 AP", "node": "apsub" },
+      "2": { "role": "主 AP", "node": "apmain" },
+      "3": { "role": "空置", "node": null },
+      "4": { "role": "PVE 回程", "node": "pve" },
+      "5": { "role": "路由主干", "node": "ikuai" },
+      "6": { "role": "SFP 光口", "node": null }
+    }
+  },
+
+  "wifi": {
+    "hosts": [
+      { "host": "192.168.X.8", "label": "客厅主 AP", "model": "BE6500 Pro", "node": "apmain" },
+      { "host": "192.168.X.5", "label": "书房子 AP", "model": "BE3600 Pro", "node": "apsub" }
+    ]
+  },
+
+  "probes": [
+    { "key": "ikuai", "name": "iKuai", "ip": "192.168.X.1", "port": 443 },
+    { "key": "pve", "name": "PVE", "ip": "192.168.X.10", "port": 8006 },
+    { "key": "nas", "name": "NAS", "ip": "192.168.X.30", "port": 445 },
+    { "key": "apmain", "name": "主 AP", "ip": "192.168.X.8", "port": 80 },
+    { "key": "apsub", "name": "子 AP", "ip": "192.168.X.5", "port": 80 },
+    { "key": "haos", "name": "HAOS", "ip": "192.168.X.20", "port": 8123 },
+    { "key": "switch", "name": "交换机", "ip": "192.168.X.3", "port": 80 },
+    { "key": "inet", "name": "公网", "ip": "223.5.5.5", "port": 53 }
+  ],
+
+  "devices": {
+    "192.168.X.1": { "name": "主路由", "zone": "弱电箱", "icon": "router", "cat": "net", "hw": "vmid 100", "note": "硬件直通" },
+    "192.168.X.3": { "name": "2.5G 交换机", "zone": "弱电箱", "icon": "switch", "cat": "net", "hw": "5 口 PoE", "note": "" },
+    "192.168.X.10": { "name": "PVE 宿主机", "zone": "弱电箱", "icon": "server", "cat": "infra", "hw": "N100", "note": "vmbr0 管理口" },
+    "192.168.X.20": { "name": "HAOS", "zone": "PVE", "icon": "vm", "cat": "infra", "hw": "vmid 101", "note": "Home Assistant" },
+    "192.168.X.30": { "name": "NAS", "zone": "客厅", "icon": "nas", "cat": "infra", "hw": "双 2.5G bond", "note": "主力存储" },
+    "192.168.X.50": { "name": "笔记本", "zone": "书房", "icon": "laptop", "cat": "client", "hw": "Windows", "note": "" }
+  },
+
+  "topology": {
+    "ont": { "title": "光猫", "sub": "桥接 · 2 路出口" },
+    "iptv": { "title": "IPTV 机顶盒", "sub": "独立链路" },
+    "ikuai": { "title": "iKuai 主路由", "sub": "X.1 · 硬件直通" },
+    "switch": { "title": "2.5G PoE 交换机", "sub": "X.3 · 2.5G × 5" },
+    "apsub": { "title": "子 AP", "sub": "X.5 · 书房" },
+    "apmain": { "title": "主 AP", "sub": "X.8 · 客厅" },
+    "pve": { "title": "PVE 宿主机", "sub": "X.10 · vmbr0" },
+    "nas": { "title": "NAS", "sub": "X.30 · 双 2.5G" }
+  }
+}
