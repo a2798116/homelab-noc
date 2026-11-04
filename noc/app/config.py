@@ -86,6 +86,9 @@ def _env(*names, default=""):
 
 SITE = _sec("site")
 SITE_NAME = SITE.get("name") or "Homelab NOC"
+# PVE 里的虚拟机在 PVE 后台常是 "WIFI"/"Copy-of-VM-WIFI" 这类代号，
+# 这里允许在本地配置里给 vmid 起一个中文名，前端 PVE 面板直接用它
+VM_NAMES = SITE.get("vm_names") or {}
 LAN_CIDR = SITE.get("subnet") or "192.168.1.0/24"
 try:
     LAN_PREFIX = str(ipaddress.ip_network(LAN_CIDR, strict=False).network_address)
@@ -134,7 +137,20 @@ MIWIFI_PASS = _env("MIWIFI_PASS", default="")
 HA_URL = _env("HA_URL", default="").rstrip("/")
 HA_USER = _env("HA_USER", default="")
 HA_PASS = _env("HA_PASS", default="")
+# 长效访问令牌（Long-Lived Access Token）：配置了就直接用，跳过登录流程
+HA_TOKEN = _env("HA_TOKEN", default="")
 HA_TOKEN_FILE = _env("HA_TOKEN_FILE", default="/data/ha_token.json")
+
+# 室内环境：房间 → 明确点名的实体。群晖/磁盘/冰箱/空调自检这些温度也叫「温度」，
+# 但完全不是室温，所以「室内」这一栏只认这里列出来的实体，不再靠 device_class 瞎猜。
+# 结构：[{"name":"客厅","src":"ZM1 · MQTT","entities":{"temp":"sensor.x","hum":"sensor.y","hcho":"sensor.z"}}]
+HA_ENV_ROOMS = _sec("ha").get("env_rooms") or []
+# 室外天气实体（不配就退回第一个有温度的 weather.*）
+HA_OUTDOOR_ENTITY = _sec("ha").get("outdoor_entity") or ""
+# 天气实体整块 unavailable 时的兜底（比如空调外机环境温度），按顺序取第一个有数的
+HA_OUTDOOR_FALLBACK = _sec("ha").get("outdoor_fallback") or []
+# 灯控面板的 switch 实体前缀（各站点设备不同，只写本地配置；不配就按实体名规则匹配）
+HA_LAMP_SWITCH_PREFIX = [str(x).strip() for x in (_sec("ha").get("lamp_switch_prefix") or []) if str(x).strip()]
 
 # ---------------------------------------------------------------- NAS 采集端
 # 大二层里手机↔NAS 的流量不经网关，只有 NAS 网卡自己知道。
@@ -147,12 +163,20 @@ NAS_STALE = float(_env("NAS_STALE", default="45"))   # 超过这么久没上报�
 PORT = int(_env("PORT", default="8940"))
 HOST = _env("HOST", default="0.0.0.0")
 
+# ---------------------------------------------------------------- 持久化
+# 事件流和指标采样都落在这个 SQLite 文件里；/data 是飞牛上的容器卷，
+# 重建容器不会丢。目录不可写时 store 会自己降级成"只保留内存事件"。
+DB_PATH = _env("DB_PATH", default="/data/noc.db")
+DB_KEEP_DAYS = float(_env("DB_KEEP_DAYS", default="90"))   # 事件保留天数
+POLL_SAMPLE = float(_env("POLL_SAMPLE", default="60"))     # 指标采样间隔
+
 # ---------------------------------------------------------------- 采集节奏（秒）
 POLL_FAST = float(_env("POLL_FAST", default="2"))        # 网关流速 + 本机网卡
 POLL_DEVICES = float(_env("POLL_DEVICES", default="5"))  # 终端列表
 POLL_PVE = float(_env("POLL_PVE", default="5"))
 POLL_PING = float(_env("POLL_PING", default="10"))
-POLL_SWITCH = float(_env("POLL_SWITCH", default="3"))    # 交换机端口速率
+POLL_SWITCH = float(_env("POLL_SWITCH", default="5"))    # 交换机端口速率（SSH 一次约 1.1s）
+POLL_VPN = float(_env("POLL_VPN", default="15"))         # VPN 隧道状态
 POLL_MIWIFI = float(_env("POLL_MIWIFI", default="10"))   # 小米 AP
 POLL_HA = float(_env("POLL_HA", default="15"))           # Home Assistant
 
@@ -179,6 +203,41 @@ for _t in (_sec("probes") or []):
 # ---------------------------------------------------------------- 拓扑节点显示文字
 # 形如 {"ikuai": {"title": "...", "sub": "..."}}，前端启动后覆盖内置通用标签
 TOPOLOGY_LABELS = _sec("topology")
+
+# ---------------------------------------------------------------- 双 WAN 运营商
+# 形如 {"wan1": {"isp": "中国联通", "name": "联通宽带", "line": "主线"}}
+# 前端据此把 wan1/wan2 标成真实运营商，而不是抽象的"主线/副线"
+WAN_LABELS = _sec("wan")
+
+# ---------------------------------------------------------------- VPN
+# ignore：已经废弃、不想再显示的拨号接口名（爱快上那条拨不通的 PPTP 就是它）
+_vpn_sec = _sec("vpn")
+VPN_IGNORE = [str(x).strip().lower() for x in (_vpn_sec.get("ignore") or []) if str(x).strip()]
+
+# clients：拨入站点名录，键是隧道地址（10.8.8.x）。
+# 爱快只给账号名和隧道 IP，站点在哪儿只有本地配置知道，所以名称一律写在这里，
+# 前端点击 VPN 弹出的「一站一拓扑」就按这张表铺三张卡片。
+# router/lan/gw/dev 描述站点侧内网：拨号的路由器、内网网段、网关、网段里的其他设备。
+VPN_CLIENTS = {}
+for _ip, _info in (_vpn_sec.get("clients") or {}).items():
+    if isinstance(_info, str):
+        VPN_CLIENTS[str(_ip).strip()] = {"name": _info, "short": "", "user": "",
+                                         "router": "", "lan": "", "gw": "", "dev": []}
+    elif isinstance(_info, dict):
+        _devs = []
+        for _d in (_info.get("dev") or []):
+            if isinstance(_d, dict) and (_d.get("ip") or _d.get("name")):
+                _devs.append({"name": _d.get("name") or _d.get("ip") or "",
+                              "ip": _d.get("ip") or ""})
+        VPN_CLIENTS[str(_ip).strip()] = {
+            "name": _info.get("name") or str(_ip),
+            "short": _info.get("short") or "",
+            "user": _info.get("user") or "",
+            "router": _info.get("router") or "",
+            "lan": _info.get("lan") or "",
+            "gw": _info.get("gw") or "",
+            "dev": _devs,
+        }
 
 # ---------------------------------------------------------------- 终端分类规则
 # 按主机名/厂商关键字归类，与具体站点无关，直接内置

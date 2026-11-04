@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """全局状态聚合：快照 / 历史曲线 / 事件流 / 健康评分"""
+import ipaddress
 import threading
 import time
 from collections import deque
 
 import assets
 import config
+import store
 
 _lock = threading.Lock()
 _state = {
@@ -19,6 +21,7 @@ _state = {
     "local": None,
     "switch": None,
     "miwifi": None,
+    "vpn": None,
     "ha": None,
     "nas": None,
     "probes": [],
@@ -46,6 +49,37 @@ _prev_cover = {}
 _wifi_map = {}
 
 
+def _vpn_label(dev):
+    """跨站终端在 iKuai 表里常常只有一个 IP，名字/厂商全是 Unknown。
+
+    配置里登记过的站点（隧道地址、站点网段、网段内点名设备）在这里翻成人话，
+    事件流、终端墙、详情抽屉都跟着一起变清楚，不用前端各写一套。
+    """
+    ip = dev.get("ip") or ""
+    if not ip:
+        return ""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ""
+    for tip, site in (config.VPN_CLIENTS or {}).items():
+        short = site.get("short") or site.get("name") or tip
+        for d in site.get("dev") or []:
+            if d.get("ip") == ip:
+                return ("%s %s" % (short, d.get("name") or "")).strip()
+        if ip == tip:
+            user = dev.get("user") or site.get("user") or ""
+            return ("%s %s" % (short, user)).strip()
+        lan = site.get("lan") or ""
+        if lan:
+            try:
+                if addr in ipaddress.ip_network(lan, strict=False):
+                    return "%s 内网设备" % short
+            except ValueError:
+                pass
+    return ""
+
+
 def _classify(dev):
     ip = dev.get("ip", "")
     meta = assets.DEVICE_META.get(ip)
@@ -64,6 +98,11 @@ def _classify(dev):
             "zone": "未知", "icon": _guess_icon(dev), "cat": cat,
             "hw": dev.get("vendor") or "", "note": "", "known": False,
         }
+        # iKuai 只报了个 IP 的那种（VPN 拨入 / 站点内网），按配置补一个能认的名字
+        if str(out["name"]).lower() in ("unknown", "未知设备", "未知终端", ""):
+            lab = _vpn_label(dev)
+            if lab:
+                out["name"] = lab
     dev.update({
         "display": out["name"],
         "zone": out["zone"],
@@ -93,10 +132,60 @@ def _guess_icon(dev):
 
 
 def _add_event(kind, level, text, detail=""):
-    _events.appendleft({
+    ev = {
         "t": int(time.time()), "kind": kind, "level": level,
         "text": text, "detail": detail,
-    })
+    }
+    _events.appendleft(ev)
+    store.add_event(ev)      # 同步落库，重启后还能翻回来
+
+
+def init_store():
+    """启动时开库并把最近的事件读回内存，事件流不从空白开始"""
+    ok = store.init(config.DB_PATH)
+    if not ok:
+        return False
+    for ev in reversed(store.recent_events(300)):
+        _events.appendleft(ev)
+    return True
+
+
+def event_history(limit=200, hours=24, level="", q=""):
+    return store.query_events(int(limit), hours, level, q)
+
+
+def event_days():
+    return store.event_days()
+
+
+def sample_metrics():
+    """把当前关键指标写一条抽样，用于回看历史趋势"""
+    with _lock:
+        s = dict(_state)
+    wan = s.get("wan") or {}
+    wan2 = (s.get("ifaces") or {}).get("wan2") or {}
+    pve = s.get("pve") or {}
+    wifi = s.get("miwifi") or {}
+    devs = s.get("devices") or []
+    # 采集器还没回数据的那几轮别入库：否则曲线上会插一串 0，看着像断网
+    if not devs and not wan.get("down"):
+        return
+    # mem 要自己算：pve 只给 mem_used / mem_total，没有 mem 这个键
+    mem_total = pve.get("mem_total") or 0
+    mem_pct = round((pve.get("mem_used") or 0) / mem_total * 100, 1) if mem_total else 0
+    store.add_metric(
+        int(time.time()),
+        wan_up=(wan.get("up") or 0) + (wan2.get("up") or 0),
+        wan_down=(wan.get("down") or 0) + (wan2.get("down") or 0),
+        online=sum(1 for d in devs if not d.get("stale")),
+        wifi=wifi.get("online") or 0,
+        cpu=round(pve.get("cpu") or 0, 1),
+        mem=mem_pct,
+    )
+
+
+def metric_history(hours=24, step=60):
+    return store.query_metrics(hours, step)
 
 
 def update(section, value):
@@ -302,6 +391,14 @@ def update_wifi(payload):
         _state["miwifi"] = payload
         _state["ts"] = int(time.time())
         _state["errors"].pop("miwifi", None)
+
+
+def update_vpn(payload):
+    """VPN：只存快照，上下线事件交给终端流（隧道客户端本身就是一个终端）"""
+    with _lock:
+        _state["vpn"] = payload
+        _state["ts"] = int(time.time())
+        _state["errors"].pop("vpn", None)
 
 
 def update_ha(payload):
@@ -603,6 +700,9 @@ def full_snapshot():
         "lan_cidr": config.LAN_CIDR,
         "nas_ip": config.NAS_IP,
         "topology": config.TOPOLOGY_LABELS,
+        "wan": config.WAN_LABELS,
+        "vm_names": config.VM_NAMES,
+        "vpn": config.VPN_CLIENTS,
     }
     return s
 

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
 import state
+import store
 from collectors import ha, ikuai, localnet, miwifi, pinger, pve, switch
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -51,6 +52,8 @@ def job_fast():
     state.update("wan", ifaces.get("wan1"))
     state.update("lan", ifaces.get("lan1"))
     state.update("local", localnet.collect())
+    # 紧跟着合并线路检测字段，避免被下一轮 job_fast 的原始接口数据覆盖
+    _merge_wan_check()
 
 
 def job_devices():
@@ -70,11 +73,17 @@ def job_wan():
 
 
 def job_switch():
+    if not config.SWITCH_URL:
+        return  # 未配置交换机管理地址时静默跳过，避免反复刷错误栈
     state.update_switch(switch.collect())
 
 
 def job_wifi():
     state.update_wifi(miwifi.collect())
+
+
+def job_vpn():
+    state.update_vpn(ikuai.collect_vpn())
 
 
 def job_ha():
@@ -90,10 +99,43 @@ def _merge_wan_check():
         wan["msg"] = chk.get("msg", "")
         wan["public_ip"] = chk.get("ip")
         state.update("wan", wan)
+    # 双 WAN：wan2 独立成状态（速率从 ifaces.wan2 取，前端合并渲染）
+    lines = chk.get("lines") or []
+    w2chk = next((l for l in lines if l.get("iface") == "wan2"), None)
+    if w2chk:
+        ifaces = state._state.get("ifaces") or {}
+        f2 = ifaces.get("wan2") or {}
+        state.update("wan2", {
+            "iface": "wan2",
+            "ip": w2chk.get("ip"),
+            "gateway": w2chk.get("gateway"),
+            "internet": w2chk.get("internet"),
+            "ok": w2chk.get("ok", True),
+            "msg": w2chk.get("msg", ""),
+            "up": f2.get("up", 0),
+            "down": f2.get("down", 0),
+        })
 
 
 def job_history():
     state.snapshot_history()
+
+
+def job_metrics():
+    """每 POLL_SAMPLE 秒采一条指标，作为"昨天这个时候"的回溯依据"""
+    state.sample_metrics()
+
+
+_last_prune = [0.0]
+
+
+def job_prune():
+    """一天清一次过期数据，别让库无限长"""
+    now = time.time()
+    if now - _last_prune[0] < 86400:
+        return
+    _last_prune[0] = now
+    store.prune(config.DB_KEEP_DAYS)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -140,6 +182,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, state.history(minutes))
         if p == "/api/events":
             return self._send(200, state.events(int((q.get("limit") or ["50"])[0])))
+        if p == "/api/events/history":
+            return self._send(200, state.event_history(
+                int((q.get("limit") or ["200"])[0]),
+                float((q.get("hours") or ["24"])[0]),
+                (q.get("level") or [""])[0],
+                (q.get("q") or [""])[0],
+            ))
+        if p == "/api/events/days":
+            return self._send(200, state.event_days())
+        if p == "/api/metrics":
+            return self._send(200, state.metric_history(
+                float((q.get("hours") or ["24"])[0]),
+                int((q.get("step") or ["60"])[0]),
+            ))
+        if p == "/api/store":
+            return self._send(200, store.stats())
         if p == "/api/health":
             return self._send(200, {"ok": True, "uptime": int(time.time() - state._state["started"])})
         if p == "/api/stream":
@@ -191,16 +249,25 @@ def main():
     print(" iKuai: %s   PVE: %s" % (config.IKUAI_URL, config.PVE_URL), flush=True)
     print("=" * 58, flush=True)
 
+    if state.init_store():
+        st = store.stats()
+        print(" 事件库: %s（%d 条历史事件）" % (st.get("path"), st.get("events") or 0), flush=True)
+    else:
+        print(" 事件库: 打开失败，历史回溯不可用（实时事件不受影响）", flush=True)
+
     _loop("ikuai", config.POLL_FAST, job_fast)
     _loop("devices", config.POLL_DEVICES, job_devices)
     _loop("pve", config.POLL_PVE, job_pve)
     _loop("probes", config.POLL_PING, job_probes)
     _loop("switch", config.POLL_SWITCH, job_switch)
     _loop("miwifi", config.POLL_MIWIFI, job_wifi)
+    _loop("vpn", config.POLL_VPN, job_vpn)
     _loop("ha", config.POLL_HA, job_ha)
     _loop("wancheck", 30, job_wan)
     _loop("wanmerge", 30, _merge_wan_check)
     _loop("history", config.POLL_FAST, job_history)
+    _loop("metrics", config.POLL_SAMPLE, job_metrics)
+    _loop("prune", 3600, job_prune)
 
     time.sleep(3)
     srv = ThreadingHTTPServer((config.HOST, config.PORT), Handler)

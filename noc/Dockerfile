@@ -5,6 +5,11 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
 WORKDIR /app
+
+# 交换机采集走 SSH：Comware 5.20 只认老 kex，用 3.5.1（4.x 起删掉了 group14-sha1）
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        paramiko==3.5.1
+
 COPY app /app
 
 EXPOSE 8940
