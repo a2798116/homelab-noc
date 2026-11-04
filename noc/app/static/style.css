@@ -83,7 +83,8 @@
   --lamp-line: rgba(255, 200, 77, 0.45);
   --lamp-glow: 0 0 18px rgba(255, 200, 77, 0.28);
 
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   --radius: 14px;
 }
 
@@ -233,7 +234,7 @@ body {
     radial-gradient(760px 420px at 92% 108%, var(--glow-b), transparent 70%),
     var(--bg);
   color: var(--txt);
-  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -624,7 +625,7 @@ body {
 }
 #topo .node.on .node-box { fill: var(--node-fill-on); stroke: var(--accent-line); }
 #topo .node.off .node-box { fill: var(--node-fill); stroke: var(--crit-line); opacity: 0.75; }
-#topo .node-title { fill: var(--node-title); font-size: 13px; font-weight: 500; font-family: system-ui, sans-serif; }
+#topo .node-title { fill: var(--node-title); font-size: 13px; font-weight: 500; font-family: var(--sans); }
 #topo .node-sub { fill: var(--node-sub); font-size: 10.5px; font-family: var(--mono); }
 #topo .node-rate { fill: var(--cyan); font-size: 10.5px; font-family: var(--mono); font-weight: 500; }
 #topo .node-rate.hot { fill: var(--violet); }
