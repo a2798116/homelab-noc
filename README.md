@@ -6,6 +6,32 @@
 
 ---
 
+## 界面预览
+
+> 以下截图取自实际运行环境，出于隐私考虑，公网 IP、MAC 地址、Wi-Fi 名称、站点与账号名已替换为示例值（`203.0.113.x` / `02:00:00:00:00:xx`），其余数据未改动。
+
+**总览** —— 左边外网双线 + 事件流，中间物理拓扑（链路流光速度 = 端口实测流量），右上是三个 VPN 拨入站点。
+
+![总览](docs/screens/01-overview.png)
+
+**网络** —— 交换机一行一口：链路类型、实时收发、PoE 功率；右侧每台 AP 的 SSID、信道、客户端信号，下方 12 个节点的 RTT 探测。
+
+![网络](docs/screens/02-network.png)
+
+**算力** —— 三栏并排：PVE 宿主机、iKuai 主路由（每核占用、会话数、双 WAN）、虚拟机全表。
+
+![算力](docs/screens/03-compute.png)
+
+**终端** —— 按类别横铺的终端墙，一格一张卡：名称 + 完整 IP + 接入方式 + 实时速率，顶部可按名称/IP/MAC 过滤。
+
+![终端](docs/screens/04-clients.png)
+
+**深色主题** —— 同一套布局，颜色令牌级切换，选择记在 localStorage，首屏不闪白。
+
+![深色主题](docs/screens/05-overview-dark.png)
+
+---
+
 ## 目录结构
 
 ```
@@ -42,6 +68,8 @@
 ├── scripts/                    运维脚本（部署、探测、WireGuard、fnOS 调优）
 │   └── _common.py              统一从 .env 读连接参数
 ├── tests/                      单元测试 + 前端渲染桩测试
+├── docs/
+│   └── screens/                README 用的界面截图（已脱敏）
 ├── .env.example                运维脚本的凭据模板
 ├── .gitignore
 └── README.md
