@@ -1,178 +1,124 @@
 # -*- coding: utf-8 -*-
-"""小米路由器（AP 模式）采集：SSID / 信道 / 在线数 / 拓扑 / 无线客户端
+"""无线 AP 采集：SSID / 在线数 / 客户端归属 —— 数据源为爱快 AC
 
-两台 AP 均为有线中继，不负责拨号，因此 wan 字段恒为 0，只取无线侧数据。
+爱快免费版禁用了 AP 详情接口（monitor_ap / ap_getinfo 返回 Access denied），
+但终端表（monitor_lanip）里每个无线客户端都带 apname（归属 AP）、ssid、
+frequencies、signal 字段。本采集器据此推算：
+
+- 每台 AP 的在线终端数 = apname 匹配的终端条数
+- 每台 AP 的 SSID = 其终端里出现过的 ssid 去重
+- 客户端明细 = 终端行的 mac / ip / 型号 / 实时速率 / 信号
+
+AP 清单在 config.local.json 的 wifi.hosts 里声明，host 字段填爱快里的
+AP 名称（如 IK-W7_286d），label/model/node 用于界面显示与拓扑对位。
 """
-import json
-import html
 import threading
 import time
-import urllib.parse
-import urllib.request
 
 import config
 
+try:
+    from collectors import ikuai
+except ImportError:  # 直接以模块方式调试时
+    import ikuai
+
 _lock = threading.Lock()
-_tokens = {}      # host -> {"token": str, "ts": float}
+_cache = {"ts": 0.0, "rows": []}
+CACHE_TTL = 8  # 秒：AP 采集 10s 一次，终端表 5s 一轮，允许复用
 
 
-def _post(host, path, payload):
-    url = "http://%s%s" % (host, path)
-    data = urllib.parse.urlencode(payload).encode()
-    req = urllib.request.Request(url, data=data)
-    req.add_header("User-Agent", "Mozilla/5.0")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    with urllib.request.urlopen(req, timeout=8) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
-
-
-def _get(host, token, path):
-    url = "http://%s/cgi-bin/luci/;stok=%s%s" % (host, token, path)
-    req = urllib.request.Request(url)
-    req.add_header("User-Agent", "Mozilla/5.0")
-    with urllib.request.urlopen(req, timeout=8) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
-
-
-def _token(host, force=False):
+def _terminals():
+    """带短缓存的终端原始行（复用 iKuai 客户端会话）"""
     with _lock:
-        c = _tokens.get(host)
-        if c and not force and time.time() - c["ts"] < 900:
-            return c["token"]
-    res = _post(host, "/cgi-bin/luci/api/xqsystem/login", {
-        "username": config.MIWIFI_USER,
-        "password": config.MIWIFI_PASS,
-        "logtype": "1",
+        if _cache["rows"] and time.time() - _cache["ts"] < CACHE_TTL:
+            return _cache["rows"]
+    r = ikuai._client.call("monitor_lanip", {
+        "TYPE": "data,total", "limit": "0,300",
+        "ORDER_BY": "ip_addr_int", "ORDER": "asc",
     })
-    tok = res.get("token")
-    if not tok:
-        raise RuntimeError("小米 AP 登录失败: %s" % str(res)[:100])
+    rows = r.get("data", []) or []
     with _lock:
-        _tokens[host] = {"token": tok, "ts": time.time()}
-    return tok
+        _cache["ts"] = time.time()
+        _cache["rows"] = rows
+    return rows
 
 
-def _call(host, path):
-    for attempt in (0, 1):
-        tok = _token(host, force=bool(attempt))
-        try:
-            return _get(host, tok, path)
-        except Exception:
-            if attempt:
-                raise
-            with _lock:
-                _tokens.pop(host, None)
-    return {}
-
-
-def _band(ifname):
-    return "5G" if ifname in ("wl0", "wifi1") else "2.4G"
-
-
-def collect_ap(meta):
-    host = meta["host"]
-    out = {
-        "host": host, "label": meta["label"], "model": meta["model"],
-        "node": meta["node"], "ok": False,
-        "ssid": "", "channels": [], "online": 0, "clients": [],
-    }
+def _rate(v):
+    """'26M' / '1.2M' / 0 → 字节数（爱快 uprate/downrate 是带单位的字符串）"""
     try:
-        topo = _call(host, "/api/misystem/topo_graph")
-        g = topo.get("graph") or {}
-        out["ssid"] = html.unescape(g.get("ssid") or "")
-        out["locale"] = g.get("locale") or ""
-        out["online"] = int(g.get("onlines") or 0)
-        # 主 AP 的拓扑里带下挂 AP 的在线数，叶子节点自己查不到
-        out["leafs"] = [
-            {"ip": lf.get("ip"), "onlines": int(lf.get("onlines") or 0),
-             "locale": lf.get("locale") or "", "name": lf.get("name") or "",
-             "link": lf.get("link_type") or ""}
-            for lf in (g.get("leafs") or [])
-        ]
-
-        wifi = _call(host, "/api/xqnetwork/wifi_detail_all")
-        seen = set()
-        for it in wifi.get("info") or []:
-            if it.get("mode") != "Master":
-                continue
-            band = _band(it.get("ifname", ""))
-            if band in seen:
-                continue
-            seen.add(band)
-            ci = it.get("channelInfo") or {}
-            # channel 字段是配置值（0=自动），真实信道在 channelInfo 里
-            ch = ci.get("channel") or it.get("channel") or 0
-            out["channels"].append({
-                "band": band,
-                "ch": int(ch) if str(ch).isdigit() else 0,
-                "width": int(ci.get("bandwidth") or 0),
-                "mode": it.get("wifimode") or "",
-                "txpwr": it.get("txpwr") or "",
-                "ssid": html.unescape(it.get("ssid") or ""),
-            })
-
-        dev = _call(host, "/api/xqsystem/device_list")
-        for d in dev.get("list") or []:
-            st = d.get("statistics") or {}
-            mac = (d.get("mac") or "").upper()
-            if not mac:
-                continue
-            # 子 AP 只返回 MAC 清单（无 IP/无速率），仍保留用于归属判定
-            out["clients"].append({
-                "mac": mac,
-                "ip": d.get("ip") or "",
-                "name": d.get("name") or d.get("hostname") or "",
-                "dev": st.get("dev") or "",
-                "up": float(st.get("upspeed") or 0) * 1024,     # KB/s → B/s
-                "down": float(st.get("downspeed") or 0) * 1024,
-                "online_sec": int(float(st.get("online") or 0)),
-            })
-
-        stat = _call(host, "/api/misystem/status")
-        mem = stat.get("mem") or {}
-        if mem.get("total"):
-            out["mem_total"] = mem.get("total")
-            out["mem_pct"] = round(float(mem.get("usage") or 0) * 100, 1)
-        hw = stat.get("hardware") or {}
-        out["firmware"] = hw.get("version") or ""
-        out["display"] = hw.get("displayName") or ""
-        cpu = stat.get("cpu") or {}
-        out["cpu_core"] = cpu.get("core")
-        out["uptime"] = int(float(stat.get("upTime") or 0))
-
-        out["ok"] = True
-    except Exception as e:
-        out["error"] = str(e)[:160]
-    return out
+        s = str(v or "").strip().upper().rstrip("BMPS")
+        return int(float(s) * 1024 * 1024) if s else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def collect():
     if not config.MIWIFI_HOSTS:
-        raise RuntimeError("未配置小米 AP（config.local.json 的 wifi.hosts）")
-    aps = [collect_ap(m) for m in config.MIWIFI_HOSTS]
+        raise RuntimeError("未配置无线 AP（config.local.json 的 wifi.hosts）")
+    try:
+        rows = _terminals()
+    except Exception as e:
+        raise RuntimeError("爱快终端表不可用: %s" % str(e)[:120])
 
-    # 子 AP 自己报不出在线数，从主 AP 拓扑的 leafs 反查
-    by_ip = {a["host"]: a for a in aps}
-    for a in aps:
-        for lf in a.get("leafs") or []:
-            tgt = by_ip.get(lf.get("ip"))
-            if tgt is not None and tgt is not a:
-                tgt["online"] = lf["onlines"]
-                tgt["locale"] = lf.get("locale") or tgt.get("locale")
-                tgt["uplink"] = lf.get("link") or ""
-
-    total_online = sum(a.get("online", 0) for a in aps if a.get("ok"))
+    # apname → 终端行分组（apname 可能带机型后缀，用前缀匹配配置里的名称）
+    aps = []
     clients = []
     seen = set()
+    for meta in config.MIWIFI_HOSTS:
+        ap = {
+            "host": meta.get("host") or "",
+            "label": meta.get("label") or meta.get("host") or "",
+            "model": meta.get("model") or "iKuai AP",
+            "ip": meta.get("ip") or "",
+            "zone": meta.get("zone") or "",
+            "node": meta.get("node"),
+            "ok": False,
+            "ssid": "", "channels": [], "online": 0, "clients": [],
+            "up": 0, "down": 0,
+        }
+        key = (meta.get("host") or "").lower()
+        if key:
+            matched = [d for d in rows
+                       if (d.get("apname") or "").lower().startswith(key)]
+            ap["online"] = len(matched)
+            ssids = []
+            for d in matched:
+                mac = (d.get("mac") or "").upper()
+                ssid = d.get("ssid") or ""
+                if ssid and ssid not in ssids:
+                    ssids.append(ssid)
+                if not mac or mac in seen:
+                    continue
+                seen.add(mac)
+                ap["clients"].append({
+                    "mac": mac,
+                    "ip": d.get("ip_addr") or "",
+                    "name": (d.get("client_model") or d.get("hostname") or
+                             d.get("termname") or "").replace("%20", " "),
+                    "dev": "2.4G" if d.get("frequencies") == "2g" else "5G",
+                    # upload/download 才是实时流量；uprate/downrate 是 802.11 协商速率，
+                    # 用它们当吞吐会算出上百 MB/s 的假数据，因此单独放在 phy_* 字段
+                    "up": d.get("upload") or 0,
+                    "down": d.get("download") or 0,
+                    "phy_up": _rate(d.get("uprate")),
+                    "phy_down": _rate(d.get("downrate")),
+                    "online_sec": 0,
+                    "signal": d.get("signal"),
+                })
+            ap["ssid"] = " / ".join(ssids)
+            ap["up"] = sum(c["up"] for c in ap["clients"])
+            ap["down"] = sum(c["down"] for c in ap["clients"])
+            ap["ok"] = True
+        aps.append(ap)
+
+    total_online = sum(a["online"] for a in aps)
     for a in aps:
-        for c in a.get("clients") or []:
-            if c["mac"] in seen:
-                continue
-            seen.add(c["mac"])
+        for c in a["clients"]:
+            c = dict(c)
             c["ap"] = a["label"]
             clients.append(c)
     return {
-        "ok": any(a.get("ok") for a in aps),
+        "ok": any(a["ok"] for a in aps),
         "aps": aps,
         "online": total_online,
         "clients": clients,

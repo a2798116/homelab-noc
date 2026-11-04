@@ -31,17 +31,50 @@ AREAS_TTL = 600
 # 设备自带指示灯（网关/路由/摄像头的灯环），不是照明，混进来会让"灯光 6/31"虚高
 _IGNORE_LIGHT_SUFFIX = ("_indicator_light",)
 
-# 灯控藏在 switch 域的集成：领普智能开关面板、小米中控屏虚拟键
-# 依据：面板按键实体形如 switch.linp_cn_xxx_pxdbw3_on_p_2_1 →「走廊开关  走廊灯 左键」
-_LIGHT_SWITCH_PREFIX = ("switch.example_panel_",)
+# 灯控藏在 switch 域的集成：智能开关面板、中控屏虚拟键
+# 依据：面板按键实体形如 switch.xxx_on_p_2_1 →「走廊开关  走廊灯 左键」
+# 前缀随各家设备不同，写 config.ha.lamp_switch_prefix；不配就只按实体名规则匹配，
+# 这样代码里不会留下任何站点自己的设备编号。
+_LIGHT_SWITCH_PREFIX = tuple(
+    str(x).strip().lower() for x in (config.HA_LAMP_SWITCH_PREFIX or []) if str(x).strip()
+)
 _SWITCH_KEY_RE = re.compile(r"_on_p_\d+_\d+$")
 
 # 按键名尾巴，去掉后才是这路灯真正的名字
 _KEY_SUFFIX = ("左键", "中键", "右键", "开关", "按键")
 # 这些词单独留下来没有信息量，说明该用面板名
 _GENERIC_NAME = ("开关", "按键", "灯", "左键", "中键", "右键")
-# 环境温度里排除水箱/水温这类非室温传感器
-_ENV_SKIP = ("鱼缸", "水温", "热水", "冰箱", "冰柜", "CPU", "电池")
+# ---- 室内环境：以「房间」为单位，数据源在 config.local.json 里点名 ----
+# HA 里叫「温度」的实体有几十个：群晖磁盘 68°C、冰箱 -20°C、浴霸 66°C 全都带
+# device_class=temperature，按 device_class 一锅端出来的「室内 68°」纯属胡说。
+# 所以客厅认 ZM1（MQTT）、书房认 Broadlink A2，写成实体白名单。
+_EXTRA_LABEL = {
+    "pm1": ("PM1", None),
+    "pm25": ("PM2.5", None),
+    "pm2_5": ("PM2.5", None),
+    "pm10": ("PM10", None),
+    # ZM1 的 hcho 在 HA 里标的是 μg/m³，但读数 0.04 这个量级只有 mg/m³ 讲得通
+    # （0.04 mg/m³ ≈ 40 μg/m³，正常室内水平），按 mg/m³ 显示
+    "hcho": ("甲醛", "mg/m³"),
+    "ch2o": ("甲醛", "mg/m³"),
+    "co2": ("CO₂", "ppm"),
+    "tvoc": ("TVOC", None),
+    "voc": ("VOC", None),
+    "aqi": ("AQI", None),
+    "lux": ("照度", "lx"),
+    "noise": ("噪音", "dB"),
+    "bat": ("电量", "%"),
+}
+
+# 自动兜底时，名字里带这些词的「温度」都不是室温（机柜/网络设备温度另算一类）
+_ENV_NOT_ROOM = (
+    "冰箱", "冰柜", "鱼缸", "水温", "热水", "cpu", "boss", "disk", "磁盘", "硬盘",
+    "插座", "空调", "浴霸", "管温", "排气", "模块温度", "系统温度", "负载监控",
+    "电池", "机箱", "交换机", "光猫", "水箱", "极空间",
+)
+
+# 顶栏「室内」优先显示哪个房间
+_ENV_PRIMARY = "客厅"
 
 
 # ---------------- token 持久化 ----------------
@@ -143,6 +176,9 @@ def _refresh(tok):
 
 def _token():
     with _lock:
+        # 长效令牌优先：不过期（10 年），直接透传
+        if config.HA_TOKEN:
+            return config.HA_TOKEN
         if _cache["access"] and time.time() < _cache["exp"] - 90:
             return _cache["access"]
     tok = None
@@ -196,6 +232,9 @@ def _load_areas(token):
     for line in body.splitlines():
         eid, _, area = line.partition("|")
         eid, area = eid.strip(), area.strip()
+        # 模板里 area_name() 没有区域时渲染成字面量 "None"，别当房间名用
+        if area in ("None", "none", "unknown", "未知", "无"):
+            continue
         if eid and area:
             out[eid] = area
     if out:
@@ -279,7 +318,254 @@ def _panel_zone(eid, raw, area_map):
 def _is_lamp_switch(eid):
     if not _SWITCH_KEY_RE.search(eid):
         return False
-    return eid.startswith(_LIGHT_SWITCH_PREFIX)
+    # 配了前缀就只认这些面板；没配就按实体名规则认，换设备不用改代码
+    return eid.startswith(_LIGHT_SWITCH_PREFIX) if _LIGHT_SWITCH_PREFIX else True
+
+
+# ---------------- 室内环境 ----------------
+def _room_item(stats, room):
+    """按配置里的实体白名单读一个房间：温度/湿度 + 若干空气质量指标"""
+    ents = room.get("entities") or room.get("entity") or {}
+    if not isinstance(ents, dict):
+        return None
+    item = {
+        "name": (room.get("name") or "房间").strip(),
+        "src": (room.get("src") or "").strip(),
+        "temp": None, "hum": None, "extra": [],
+    }
+    for k, eid in ents.items():
+        s = stats.get(eid) if isinstance(eid, str) else None
+        if not s:
+            continue
+        if s.get("state") in (None, "unavailable", "unknown"):
+            continue
+        v = _num(s.get("state"))
+        if v is None:
+            continue
+        key = str(k).lower()
+        if key in ("temp", "t", "temperature"):
+            item["temp"] = v
+        elif key in ("hum", "h", "humidity", "rh"):
+            item["hum"] = v
+        else:
+            label, unit = _EXTRA_LABEL.get(key, (str(k).upper(), None))
+            unit = unit or (s.get("attributes") or {}).get("unit_of_measurement") or ""
+            item["extra"].append({"k": label, "v": v, "u": unit})
+    if item["temp"] is None and item["hum"] is None and not item["extra"]:
+        return None
+    return item
+
+
+def _room_env(states, area_map):
+    """室内读数 = 配置点名的房间（客厅 ZM1 / 书房 Broadlink）+ HA 区域里其它合规传感器
+
+    兜底那部分只收「挂在区域里、单位是 °C、名字不像设备」的传感器：
+    没挂区域的（同一只表被两个集成重复上报）和名字带 Boss/Disk/冰箱 的一律不要。
+    """
+    stats = {s.get("entity_id"): s for s in states if s.get("entity_id")}
+
+    rooms, taken = [], set()
+    for r in config.HA_ENV_ROOMS:
+        if not isinstance(r, dict):
+            continue
+        it = _room_item(stats, r)
+        if not it:
+            continue
+        rooms.append(it)
+        taken.add(it["name"])
+
+    # ---- 兜底：区域里剩下的温湿度传感器 ----
+    by_area = {}
+    for s in states:
+        eid = s.get("entity_id") or ""
+        dom = eid.split(".", 1)[0]
+        if dom != "sensor":
+            continue
+        a = s.get("attributes") or {}
+        dc = a.get("device_class")
+        if dc not in ("temperature", "humidity"):
+            continue
+        if s.get("state") in (None, "unavailable", "unknown"):
+            continue
+        nm = (a.get("friendly_name") or eid).lower()
+        if any(k in nm for k in _ENV_NOT_ROOM):
+            continue
+        unit = (a.get("unit_of_measurement") or "")
+        if dc == "temperature" and "F" in unit.upper():
+            continue                                  # 华氏的那几只都是设备内部温度
+        v = _num(s.get("state"))
+        if v is None:
+            continue
+        if dc == "temperature" and not (-10 <= v <= 55):
+            continue                                  # 室温不可能跑到这个区间外
+        area = area_map.get(eid)
+        if not area or area in taken or area in ("网络", "其他"):
+            continue
+        slot = by_area.setdefault(area, {"name": area, "src": "HA 区域",
+                                         "temp": None, "hum": None, "extra": []})
+        slot["hum" if dc == "humidity" else "temp"] = v
+
+    env = rooms + [v for k, v in by_area.items() if k not in taken]
+
+    # 顶栏优先客厅：把它顶到第一位，前端不用猜
+    env.sort(key=lambda x: (0 if x["name"] == _ENV_PRIMARY else 1,
+                            0 if x["temp"] is not None else 1))
+    return env[:8]
+
+
+def _outdoor(states, stats):
+    """室外：指定 weather.forecast_home；没配才退回第一个有温度的 weather.*"""
+    pick = stats.get(config.HA_OUTDOOR_ENTITY) if config.HA_OUTDOOR_ENTITY else None
+    if not pick or pick.get("state") in (None, "unavailable", "unknown"):
+        pick = None
+        for s in states:
+            if not (s.get("entity_id") or "").startswith("weather."):
+                continue
+            if s.get("state") in (None, "unavailable", "unknown"):
+                continue
+            a0 = s.get("attributes") or {}
+            if a0.get("temperature") is None:
+                continue
+            pick = s
+            break
+    if not pick:
+        return None
+    a = pick.get("attributes") or {}
+    return {
+        "cond": pick.get("state"),
+        "temp": _num(a.get("temperature")),
+        "hum": _num(a.get("humidity")),
+        "wind": _num(a.get("wind_speed")),
+        "wind_bearing": _num(a.get("wind_bearing")),
+        "pressure": _num(a.get("pressure")),
+        "dew": _num(a.get("dew_point")),
+        "uv": _num(a.get("uv_index")),
+        "vis": _num(a.get("visibility")),
+        "name": a.get("friendly_name") or "室外",
+        "entity": pick.get("entity_id"),
+    }
+
+
+# ---------------- 掉线时用上一次的有效读数 ----------------
+# met.no 会整块变 unavailable、蓝牙温湿度计偶尔一两条 unknown。一次采样失败就把
+# 顶栏打成「—」太蠢，这里记住上一份有效值补位，并带上 stale 秒数让界面说明。
+_last = {"rooms": {}, "outdoor": None}
+_last_file = ""
+_last_persist = 0.0
+
+
+def _last_path():
+    global _last_file
+    if _last_file:
+        return _last_file
+    base = os.path.dirname(config.HA_TOKEN_FILE or "/data/ha_token.json")
+    _last_file = os.path.join(base or ".", "ha_last.json")
+    try:
+        with open(_last_file, encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict):
+            _last["rooms"] = d.get("rooms") or {}
+            _last["outdoor"] = d.get("outdoor")
+    except Exception:
+        pass
+    return _last_file
+
+
+def _last_save():
+    """落盘：容器重启后仍能拿上一次的有效读数，不然第一轮采样就是「—」"""
+    global _last_persist
+    now = time.time()
+    if now - _last_persist < 120:
+        return
+    _last_persist = now
+    p = _last_path()
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"rooms": _last["rooms"], "outdoor": _last["outdoor"]}, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _sensor_outdoor(stats):
+    """天气实体整块挂掉时，退到配置里的备用传感器（空调外机环境温度）"""
+    for f in config.HA_OUTDOOR_FALLBACK:
+        eid = f.get("entity") if isinstance(f, dict) else f
+        s = stats.get(eid) if isinstance(eid, str) else None
+        if not s or s.get("state") in (None, "unavailable", "unknown"):
+            continue
+        v = _num(s.get("state"))
+        if v is None or not (-40 <= v <= 60):
+            continue
+        unit = (s.get("attributes") or {}).get("unit_of_measurement") or ""
+        if "F" in unit.upper():
+            v = (v - 32) * 5.0 / 9.0
+        src = (f.get("src") if isinstance(f, dict) else "") or "备用传感器"
+        short = (f.get("short") if isinstance(f, dict) else "") or src
+        for suf in ("环境温度", "温度"):
+            if short.endswith(suf):
+                short = short[:-len(suf)]
+        return {"cond": None, "temp": v, "hum": None, "wind": None,
+                "dew": None, "uv": None, "pressure": None, "vis": None,
+                "name": src, "src": src, "short": short or src, "entity": eid}
+    return None
+
+
+def _carry(env, outdoor):
+    now = time.time()
+    _last_path()
+
+    # 1) 点名房间整个消失在 env 里（实体全 unavailable）→ 用缓存补回来
+    names = {e.get("name") for e in env}
+    for r in config.HA_ENV_ROOMS:
+        if not isinstance(r, dict):
+            continue
+        nm = (r.get("name") or "").strip()
+        prev = _last["rooms"].get(nm)
+        if nm and nm not in names and prev:
+            it = {"name": nm, "src": prev.get("src") or (r.get("src") or ""),
+                  "temp": prev.get("temp"), "hum": prev.get("hum"),
+                  "extra": [dict(x) for x in prev.get("extra") or []],
+                  "stale": int(now - prev.get("ts", now))}
+            env.append(it)
+            names.add(nm)
+
+    # 2) 单字段缺失 → 逐项补
+    for it in env:
+        prev = _last["rooms"].get(it.get("name")) or {}
+        fresh = False
+        if not prev:
+            if it.get("temp") is not None or it.get("hum") is not None:
+                _last["rooms"][it.get("name")] = {
+                    "src": it.get("src"), "temp": it.get("temp"), "hum": it.get("hum"),
+                    "extra": [dict(x) for x in it.get("extra") or []], "ts": now}
+            continue
+        for k in ("temp", "hum"):
+            if it.get(k) is None and prev.get(k) is not None:
+                it[k] = prev[k]
+                it["stale"] = int(now - prev.get("ts", now))
+            elif it.get(k) is not None:
+                fresh = True
+        if not it.get("extra") and prev.get("extra"):
+            it["extra"] = [dict(x) for x in prev["extra"]]
+            it.setdefault("stale", int(now - prev.get("ts", now)))
+        elif it.get("extra"):
+            fresh = True
+        if fresh:
+            _last["rooms"][it.get("name")] = {
+                "src": it.get("src"), "temp": it.get("temp"), "hum": it.get("hum"),
+                "extra": [dict(x) for x in it.get("extra") or []], "ts": now}
+
+    # 3) 室外
+    if not outdoor or outdoor.get("temp") is None:
+        prev = _last.get("outdoor")
+        if prev:
+            outdoor = dict(prev)
+            outdoor["stale"] = int(now - prev.get("ts", now))
+    else:
+        _last["outdoor"] = dict(outdoor, ts=now)
+    _last_save()
+    return env, outdoor
+
 
 
 def _extract(states, area_map):
@@ -296,20 +582,7 @@ def _extract(states, area_map):
         dc = a.get("device_class")
         raw = a.get("friendly_name") or ""
 
-        if dom == "sensor" and dc in ("temperature", "humidity") and st not in ("unavailable", "unknown"):
-            if any(k in raw for k in _ENV_SKIP):
-                continue                      # 鱼缸水温/冰箱温度不是室温
-            v = _num(st)
-            if v is None:
-                continue
-            base = eid.rsplit("_", 1)[0]
-            slot = next((e for e in env if e["_base"] == base), None)
-            if not slot:
-                slot = {"_base": base, "name": _friendly(s), "temp": None, "hum": None}
-                env.append(slot)
-            slot["hum" if dc == "humidity" else "temp"] = v
-
-        elif dom == "climate":
+        if dom == "climate":
             climates.append({
                 "name": _friendly(s, 18),
                 "area": _zone(eid, raw, area_map),
@@ -389,26 +662,8 @@ def _extract(states, area_map):
                               "area": _panel_zone(eid, raw, area_map),
                               "wet": st == "on"})
 
-    # ---- 温湿度归并 ----
-    for e in env:
-        e.pop("_base", None)
-        nm = e["name"]
-        for suf in (" 温度", " 相对湿度", "_温度", "温度", "湿度"):
-            if nm.endswith(suf):
-                nm = nm[: -len(suf)]
-                break
-        e["name"] = nm.strip(" _-") or "传感器"
-    merged = {}
-    for e in env:
-        k = e["name"]
-        if k in merged:
-            if e["temp"] is not None:
-                merged[k]["temp"] = e["temp"]
-            if e["hum"] is not None:
-                merged[k]["hum"] = e["hum"]
-        else:
-            merged[k] = e
-    env = sorted(merged.values(), key=lambda x: (x["temp"] is None, x["name"]))[:8]
+    # ---- 室内环境：点名房间优先，其余按 HA 区域兜底 ----
+    env = _room_env(states, area_map)
 
     # ---- 灯：去重（中控屏同名虚拟键）+ 按房间排序 ----
     seen, uniq = set(), []
@@ -461,18 +716,15 @@ def collect():
             amap = _areas
         out.update(_extract(states, amap))
 
-        # 室外天气
-        for s in states:
-            if s.get("entity_id", "").startswith("weather.") and s["state"] not in ("unavailable", "unknown"):
-                a = s.get("attributes") or {}
-                out["outdoor"] = {
-                    "cond": s["state"],
-                    "temp": _num(a.get("temperature")),
-                    "hum": _num(a.get("humidity")),
-                    "wind": _num(a.get("wind_speed")),
-                    "name": a.get("friendly_name") or "室外",
-                }
-                break
+        # 室外天气：钉死 weather.forecast_home（met.no），别再被别的 weather 实体抢走
+        stats = {s.get("entity_id"): s for s in states}
+        od = _outdoor(states, stats)
+        env, od = _carry(out.get("env") or [], od)
+        out["env"] = env
+        if not od or od.get("temp") is None:
+            od = _sensor_outdoor(stats) or od      # met.no 整块挂掉时的最后兜底
+        if od:
+            out["outdoor"] = od
 
         try:
             cfg = _get("/api/config", token)

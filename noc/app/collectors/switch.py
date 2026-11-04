@@ -1,239 +1,259 @@
 # -*- coding: utf-8 -*-
-"""水星 SE106P 交换机采集：端口 link 状态 / 实时收发速率 / PoE 功率
+"""H3C S5110-10P 交换机采集（Comware 5.20，SSH + CLI）
 
-登录用 TP-Link 系的 securityEncode（源码里叫 hex_md5，实为异或映射）。
-速率单位：设备返回 kbps，这里统一换算成 bytes/s 供前端使用。
+为什么走 SSH 而不是 Web：
+  * 这台机器的 Web 登录页带图形验证码（/vld.bmp），没法无人值守登录；
+  * SSH 一直开着，CLI 输出稳定，`display interface` 里直接带
+    「Last 300 seconds input/output ... bytes/sec」，是设备自己算好的速率，
+    不用我们做两次采样求差。
+  * 坑：Comware 5.20 的 SSH 只提供 diffie-hellman-group14-sha1 这类老算法，
+    新版 paramiko 已经删掉这些 kex，必须手工塞回 _preferred_kex，
+    否则报 "no acceptable kex algorithm"。
+
+每轮只发一条 `display interface`（一次性打印所有口），解析出：
+  链路状态 / 协商速率 / 描述 / PVID / access|trunk / 收字节每秒 / 发字节每秒
+版本信息（型号、序列号、uptime）单独取一次并缓存，避免每 3 秒读一遍。
 """
-import http.cookiejar
 import re
+import socket
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 
 import config
 
-_KEY = "RDpbLfCPsJZ7fiv"
-_TBL = (
-    "yLwVl0zKqws7LgKPRQ84Mdt708T1qQ3Ha7xv3H7NyU84p21BriUWBU43odz3iP4rBL3cD02KZciX"
-    "TysVXiV8ngg6vL48rPJyAUw0HurW20xqxv9aYb4M9wK1Ae0wlro510qXeU07kV57fQMc8L6aLgML"
-    "wygtc0F10a0Dg70TOoouyFhdysuRMO51yY5ZlOZZLEal1h0t9YQW0Ko7oBwmCAHoic4HYbUyVeU3"
-    "sfQ1xtXcPcf1aT303wAQhv66qzW"
+try:
+    import paramiko
+except ImportError:                                  # 镜像里没装时给出可操作的提示
+    paramiko = None
+
+# Comware 5.20 只认这些老算法，新版 paramiko 默认已不再提供
+_LEGACY_KEX = (
+    "diffie-hellman-group14-sha1",
+    "diffie-hellman-group1-sha1",
+    "diffie-hellman-group-exchange-sha1",
 )
-# spd_act 编码 → 速率文本
-_SPEED = {0: "断开", 1: "自动", 2: "10M", 3: "10M", 4: "100M", 5: "100M",
-          6: "1G", 7: "2.5G", 8: "10G"}
-_SPEED_MBPS = {0: 0, 1: 0, 2: 10, 3: 10, 4: 100, 5: 100, 6: 1000, 7: 2500, 8: 10000}
+_LEGACY_KEYS = ("ssh-rsa", "ssh-dss")
+_LEGACY_CIPHERS = ("aes128-cbc", "3des-cbc", "aes256-cbc")
+
+_PROMPT = re.compile(rb"[<\[][^<>\[\]\r\n]{1,40}[>\]]\s*$")
 
 _lock = threading.Lock()
-_sess = {"op": None, "ts": 0}
-_login_fail = {"count": 0, "ts": 0}
-# 口 → 上次确切的速率，用于把偶发的 spd_act=0 补回来
-_last_speed = {}
+_conn = {"t": None, "ch": None, "ts": 0}
+_ver = {"ts": 0, "data": {}}
+
+_HDR = re.compile(r"^\s*((?:Gigabit|Ten-Gigabit)Ethernet\d+/\d+/\d+) current state: (\w+)", re.M)
 
 
-def _encode(pwd):
-    """TP-Link securityEncode"""
-    e, c, j = len(pwd), len(_KEY), len(_TBL)
-    out = []
-    for g in range(max(e, c)):
-        l = i = 187
-        if g >= e:
-            i = ord(_KEY[g])
-        elif g >= c:
-            l = ord(pwd[g])
-        else:
-            l = ord(pwd[g])
-            i = ord(_KEY[g])
-        out.append(_TBL[(l ^ i) % j])
-    return "".join(out)
+def _split_host(url):
+    """SWITCH_URL 支持 192.168.X.Y / ssh://user@host:port 两种写法"""
+    s = (url or "").strip()
+    s = re.sub(r"^ssh://", "", s)
+    if "@" in s:
+        s = s.split("@", 1)[1]
+    host, _, port = s.partition(":")
+    return host, int(port or 22)
 
 
-def _new_session():
-    cj = http.cookiejar.CookieJar()
-    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-    return op
+def _drain(ch, idle=0.35, total=6.0):
+    buf = b""
+    t0 = time.time()
+    while time.time() - t0 < total:
+        if ch.recv_ready():
+            buf += ch.recv(65536)
+            t0 = time.time()
+            continue
+        time.sleep(0.03)
+        if buf and not ch.recv_ready():
+            time.sleep(idle)
+            if not ch.recv_ready():
+                break
+    return buf
 
 
-def _fetch(op, path, data=None):
-    url = config.SWITCH_URL + path
-    body = urllib.parse.urlencode(data).encode() if data else None
-    req = urllib.request.Request(url, data=body)
-    req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-    req.add_header("Referer", config.SWITCH_URL + "/Menu.htm")
-    if body:
-        req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    with op.open(req, timeout=8) as r:
-        return r.read().decode("utf-8", "replace")
+def _open():
+    if paramiko is None:
+        raise RuntimeError("容器里没有 paramiko，无法 SSH 采集交换机")
+    host, port = _split_host(config.SWITCH_URL)
+    sock = socket.create_connection((host, port), timeout=8)
+    t = paramiko.Transport(sock)
+    # 老算法插到最前面（保留新算法兜底，换设备不用改代码）
+    t._preferred_kex = _LEGACY_KEX + tuple(t._preferred_kex)
+    t._preferred_keys = _LEGACY_KEYS + tuple(t._preferred_keys)
+    t._preferred_ciphers = _LEGACY_CIPHERS + tuple(t._preferred_ciphers)
+    t.start_client(timeout=10)
+    t.auth_password(config.SWITCH_USER, config.SWITCH_PASS)
+    ch = t.open_session()
+    ch.get_pty()
+    ch.invoke_shell()
+    time.sleep(0.9)
+    _drain(ch, 0.4)
+    ch.send("screen-length disable\n")
+    _drain(ch, 0.4)
+    return t, ch
 
 
-def _login():
-    op = _new_session()
-    _fetch(op, "/")
-    body = _fetch(op, "/logon.cgi", {
-        "username": config.SWITCH_USER,
-        "password": _encode(config.SWITCH_PASS),
-        "logon": "Login",
-    })
-    m = re.search(r"logonInfo\s*=\s*new Array\(\s*(\d+)", body)
-    code = int(m.group(1)) if m else -1
-    if code != 0:
-        # 实测：0=成功；非 0 为失败
-        raise RuntimeError("交换机登录失败 logonInfo=%s" % code)
-    return op
+def _cmd(ch, cmd, total=6.0):
+    ch.send(cmd + "\n")
+    time.sleep(0.12)
+    buf = b""
+    t0 = time.time()
+    while time.time() - t0 < total:
+        if ch.recv_ready():
+            buf += ch.recv(65536)
+            t0 = time.time()
+            if _PROMPT.search(buf):
+                time.sleep(0.06)
+                if not ch.recv_ready():
+                    break
+            continue
+        time.sleep(0.03)
+        if buf and _PROMPT.search(buf):
+            break
+    return buf.decode("utf-8", "replace")
 
 
 def _session():
     with _lock:
-        if _sess["op"] and time.time() - _sess["ts"] < 600:
-            return _sess["op"]
-    op = _login()
+        if _conn["ch"] and time.time() - _conn["ts"] < 900:
+            return _conn["ch"]
+    t, ch = _open()
     with _lock:
-        _sess["op"] = op
-        _sess["ts"] = time.time()
-    return op
+        _conn.update({"t": t, "ch": ch, "ts": time.time()})
+    return ch
 
 
-def _drop_session():
+def _drop():
     with _lock:
-        _sess["op"] = None
-        _sess["ts"] = 0
-
-
-def _arr(text, name):
-    m = re.search(r"%s\s*:\s*\[([0-9,\s\.]*)\]" % re.escape(name), text)
-    if not m:
-        return []
-    vals = []
-    for v in m.group(1).split(","):
-        v = v.strip()
-        if not v:
-            continue
         try:
-            vals.append(float(v))
-        except ValueError:
-            vals.append(0.0)
-    return vals
-
-
-def _arr_str(text, name):
-    m = re.search(r"%s\s*:\s*\[([^\[\]]*)\]" % re.escape(name), text)
-    if not m:
-        return []
-    return [x.strip() for x in m.group(1).split(",")]
-
-
-def _parse_main(html):
-    rx = _arr(html, "rx_rate")      # kbps
-    tx = _arr(html, "tx_rate")
-    spd = _arr(html, "spd_act")
-    poe_port = _arr(html, "is_poe_port")
-    poe_power = _arr(html, "power")
-    state = _arr(html, "state")
-
-    ports = []
-    total = max(len(rx), len(tx), len(spd))
-    for i in range(total):
-        no = i + 1
-        meta = config.SWITCH_PORTS.get(no, {"role": "端口 %d" % no, "node": None})
-        spd_code = int(spd[i]) if i < len(spd) else 0
-        rx_kbps = rx[i] if i < len(rx) else 0
-        tx_kbps = tx[i] if i < len(tx) else 0
-        st_on = bool(state[i]) if i < len(state) else False
-        # 关键：spd_act 偶发读成 0，但同一时刻 rx/tx 仍有值。
-        # 端口真的 down 时收发速率必然是 0，所以"有流量"足以证明链路是通的。
-        has_traffic = (rx_kbps + tx_kbps) > 0
-        ports.append({
-            "no": no,
-            "role": meta["role"],
-            "node": meta["node"],
-            "spd_code": spd_code,
-            "up": spd_code > 0 or has_traffic,
-            "speed": _SPEED.get(spd_code, "?"),
-            "speed_mbps": _SPEED_MBPS.get(spd_code, 0),
-            "rx_kbps": rx_kbps,
-            "tx_kbps": tx_kbps,
-            # kbps → bytes/s
-            "rx": rx_kbps * 125,
-            "tx": tx_kbps * 125,
-            "poe_capable": bool(poe_port[i]) if i < len(poe_port) else False,
-            "poe_w": (poe_power[i] / 10.0) if i < len(poe_power) else 0.0,
-            "enabled": st_on,
-            # 速率读数不可信，已用历史值补全
-            "jitter": bool(spd_code == 0 and has_traffic),
-        })
-    return ports
-
-
-def _settle(ports):
-    """把速率读数抖动压掉：重取一次，仍不确定就沿用上次已知速率。
-
-    水星 SE106P 的 MainRpm 在 2.5G 口上偶发把 spd_act 写成 0（实测约 1/6 的采样），
-    同时 rx/tx 却是正常值——端口并没有断。这里只修显示，不动 up 判定。
-    """
-    shaky = [p for p in ports if p["jitter"]]
-    if shaky:
-        try:
-            html2 = _fetch(_session(), "/MainRpm.htm")
-            again = {p["no"]: p for p in _parse_main(html2)}
-            for p in shaky:
-                q = again.get(p["no"])
-                if q and q["spd_code"] > 0:
-                    p.update({
-                        "spd_code": q["spd_code"],
-                        "speed": q["speed"],
-                        "speed_mbps": q["speed_mbps"],
-                        "jitter": False,
-                    })
+            if _conn["t"]:
+                _conn["t"].close()
         except Exception:
             pass
+        _conn.update({"t": None, "ch": None, "ts": 0})
 
-    for p in ports:
-        if p["spd_code"] > 0:
-            _last_speed[p["no"]] = (p["speed"], p["speed_mbps"])
-        elif p["jitter"] and p["no"] in _last_speed:
-            sp, mb = _last_speed[p["no"]]
-            p["speed"] = sp + "?"      # 问号 = 沿用上次，本轮没读到
-            p["speed_mbps"] = mb
+
+def _num(pat, text, default=0):
+    m = re.search(pat, text)
+    return int(m.group(1)) if m else default
+
+
+def _parse_ifaces(text):
+    """按块解析 `display interface`，只保留物理口（GE / Ten-GE）"""
+    blocks = []
+    hits = list(_HDR.finditer(text))
+    for i, m in enumerate(hits):
+        end = hits[i + 1].start() if i + 1 < len(hits) else len(text)
+        blocks.append((m.group(1), m.group(2), text[m.start():end]))
+
+    ports = []
+    for name, state, body in blocks:
+        no = int(name.rsplit("/", 1)[1])
+        dm = re.search(r"Description:\s*(.*?)\s*\r?\n", body)
+        desc = (dm.group(1).strip() if dm else "")
+        if desc.endswith("Interface"):                  # 出厂默认描述等于没写
+            desc = ""
+        sm = re.search(r"(\d+)Mbps-speed mode", body)
+        up = state.upper() == "UP"
+        speed_mbps = int(sm.group(1)) if (sm and up) else 0
+        rx = _num(r"Last 300 seconds input:\s+\d+ packets/sec\s+(\d+) bytes/sec", body)
+        tx = _num(r"Last 300 seconds output:\s+\d+ packets/sec\s+(\d+) bytes/sec", body)
+        err = _num(r"Input:\s+(\d+) input errors", body)
+        pvid = _num(r"PVID:\s*(\d+)", body)
+        lt = re.search(r"Port link-type:\s*(\w+)", body)
+        link_type = lt.group(1) if lt else ""
+        vlan = ""
+        if link_type == "trunk":
+            vm = re.search(r"Tagged\s+VLAN ID\s*:\s*([0-9,\s]+)", body)
+        else:
+            vm = re.search(r"Untagged VLAN ID\s*:\s*([0-9,\s]+)", body)
+        if vm:
+            vlan = " ".join(vm.group(1).split())
+
+        meta = config.SWITCH_PORTS.get(no, {})
+        if speed_mbps >= 1000:
+            spd = "%.0fG" % (speed_mbps / 1000.0)
+        elif speed_mbps:
+            spd = "%dM" % speed_mbps
+        else:
+            spd = ""
+        ports.append({
+            "no": no,
+            "ifname": "GE1/0/%d" % no,
+            "desc": desc,
+            "role": meta.get("role") or desc or ("口 %d" % no),
+            "node": meta.get("node"),
+            "up": up,
+            "speed": spd,
+            "speed_mbps": speed_mbps,
+            "rx": rx,      # 收字节/秒
+            "tx": tx,      # 发字节/秒
+            "pvid": pvid,
+            "link_type": link_type,
+            "vlan": vlan,
+            "errors": err,
+        })
+    ports.sort(key=lambda p: p["no"])
     return ports
+
+
+def _version(ch):
+    with _lock:
+        if _ver["data"] and time.time() - _ver["ts"] < 1800:
+            return _ver["data"]
+    txt = _cmd(ch, "display version")
+    uptime = ""
+    model = ""
+    m = re.search(r"^(H3C\s+\S+?)\s+uptime is\s+(.+)$", txt, re.M)
+    if m:
+        model, uptime = m.group(1).strip(), m.group(2).strip()
+    if not model:
+        m2 = re.search(r"^(H3C\s+S\S+)\s*$", txt, re.M)
+        model = m2.group(1).strip() if m2 else ""
+    ver = ""
+    m3 = re.search(r"Comware Software, Version\s+([\d.]+,\s*Release\s*\w+)", txt)
+    if m3:
+        ver = "Comware " + m3.group(1)
+    data = {"model": model, "version": ver, "uptime": uptime}
+    with _lock:
+        _ver.update({"ts": time.time(), "data": data})
+    return data
 
 
 def collect():
     if not config.SWITCH_URL:
-        raise RuntimeError("未配置 SWITCH_URL（见 .env.example）")
+        raise RuntimeError("未配置 SWITCH_URL")
     for attempt in (0, 1):
         try:
-            op = _session()
-            html = _fetch(op, "/MainRpm.htm")
-            if "rx_rate" not in html:
-                raise RuntimeError("页面无速率字段，会话可能失效")
-            ports = _settle(_parse_main(html))
-            up_count = sum(1 for p in ports if p["up"])
+            ch = _session()
+            txt = _cmd(ch, "display interface")
+            if "current state" not in txt:
+                raise RuntimeError("没有读到接口输出，会话可能失效")
+            ports = _parse_ifaces(txt)
+            if not ports:
+                raise RuntimeError("接口输出解析为空")
+            info = _version(ch)
+            with _lock:
+                _conn["ts"] = time.time()
             return {
                 "ok": True,
+                "model": info.get("model") or "H3C",
+                "version": info.get("version") or "",
+                "uptime": info.get("uptime") or "",
                 "ports": ports,
-                "up_count": up_count,
+                "up_count": sum(1 for p in ports if p["up"]),
                 "total_ports": len(ports),
-                "poe_used_w": round(sum(p["poe_w"] for p in ports), 1),
-                "poe_ports": sum(1 for p in ports if p["poe_capable"]),
-                "jitter_count": sum(1 for p in ports if p["jitter"]),
+                "poe_used_w": 0.0,
+                "poe_ports": 0,
+                "jitter_count": 0,
                 "ts": int(time.time()),
             }
         except Exception:
-            _drop_session()
+            _drop()
             if attempt:
                 raise
     return {"ok": False, "ports": [], "error": "unreachable"}
 
 
 def collect_usage():
-    """端口统计页：累计收发包数（用于计算 PPS）"""
-    try:
-        op = _session()
-        html = _fetch(op, "/PortStatisticsRpm.htm")
-        pkts = _arr(html, "pkts")
-        return {"pkts": pkts}
-    except Exception:
-        _drop_session()
-        return {}
+    """保留接口：H3C 的累计包数在大屏上不用"""
+    return {}

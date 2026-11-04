@@ -19,7 +19,10 @@ import config
 
 class IkuaiClient:
     def __init__(self):
-        self._lock = threading.Lock()
+        # 爱快的 /Action/call 并发访问会返回残缺 JSON（实测 48 个字符处截断），
+        # 采集线程又多（2s/5s/10s/15s 各一条），所以所有请求串行发。
+        # 单条只要 ~20ms，串行化的代价远小于偶发的解析失败。
+        self._req = threading.RLock()
         self._opener = None
         self._logged_at = 0.0
 
@@ -45,31 +48,42 @@ class IkuaiClient:
             return json.loads(r.read().decode("utf-8", "replace"))
 
     def login(self):
-        with self._lock:
-            self._opener = self._build()
-            md5 = hashlib.md5(config.IKUAI_PASS.encode("utf-8")).hexdigest()
-            b64 = base64.b64encode(config.IKUAI_USER.encode("utf-8")).decode()
-            res = self._post("/Action/login", {
-                "username": config.IKUAI_USER, "passwd": md5,
-                "pass": b64, "remember_password": "",
-            })
-            if res.get("code") != 0:
-                raise RuntimeError("iKuai 登录失败: %s" % res.get("message"))
-            self._logged_at = time.time()
+        with self._req:
+            self._login_locked()
+
+    def _login_locked(self):
+        self._opener = self._build()
+        md5 = hashlib.md5(config.IKUAI_PASS.encode("utf-8")).hexdigest()
+        b64 = base64.b64encode(("salt_11" + md5).encode()).decode()
+        res = self._post("/Action/login", {
+            "username": config.IKUAI_USER, "passwd": md5,
+            "pass": b64, "remember_password": "",
+        })
+        if res.get("code") != 0:
+            raise RuntimeError("iKuai 登录失败: %s" % res.get("message"))
+        self._logged_at = time.time()
 
     def call(self, func, param=None):
-        if self._opener is None or time.time() - self._logged_at > 1500:
-            self.login()
-        payload = {"func_name": func, "action": "show", "param": param or {}}
-        try:
-            res = self._post("/Action/call", payload)
-        except Exception:
-            self.login()
-            res = self._post("/Action/call", payload)
-        if res.get("code") not in (0, None):
-            self.login()
-            res = self._post("/Action/call", payload)
-        return res.get("results") or {}
+        with self._req:
+            if self._opener is None or time.time() - self._logged_at > 1500:
+                self._login_locked()
+            payload = {"func_name": func, "action": "show", "param": param or {}}
+            last = None
+            for _ in range(3):
+                try:
+                    res = self._post("/Action/call", payload)
+                    if res.get("code") in (0, None):
+                        return res.get("results") or {}
+                    last = res
+                except Exception as exc:          # 会话过期或偶发残缺响应
+                    last = exc
+                try:
+                    self._login_locked()
+                except Exception:
+                    pass
+            if isinstance(last, Exception):
+                raise last
+            return (last or {}).get("results") or {}
 
 
 _client = IkuaiClient()
@@ -142,18 +156,119 @@ def collect_interfaces():
 
 
 def collect_wan_check():
+    """双 WAN 线路检测：返回所有 wan 口的在线状态（V4 iface_check）"""
     r = _client.call("monitor_iface", {"TYPE": "iface_check"})
     rows = r.get("iface_check") or []
     if not rows:
         return {}
-    row = rows[0]
+    lines = []
+    for row in rows:
+        lines.append({
+            "iface": row.get("interface"),
+            "ip": row.get("ip_addr"),
+            "gateway": row.get("gateway"),
+            "internet": row.get("internet"),
+            "ok": row.get("result") == "success",
+            "msg": row.get("errmsg"),
+            "auto_switch": row.get("auto_switch") or "",
+        })
+    first = lines[0]
     return {
-        "ip": row.get("ip_addr"),
-        "gateway": row.get("gateway"),
-        "internet": row.get("internet"),
-        "ok": row.get("result") == "success",
-        "msg": row.get("errmsg"),
+        "lines": lines,
+        # 兼容旧字段：主 WAN（wan1）作为整体外网状态
+        "ip": first.get("ip"),
+        "gateway": first.get("gateway"),
+        "internet": first.get("internet"),
+        "ok": first.get("ok", True),
+        "msg": first.get("msg"),
     }
+
+
+def _fmt_ts(ts):
+    """爱快给的是 unix 秒，转成本地时间字符串；非法值直接留空"""
+    try:
+        ts = int(ts)
+    except (TypeError, ValueError):
+        return ""
+    if ts <= 0:
+        return ""
+    return time.strftime("%m-%d %H:%M", time.localtime(ts))
+
+
+def collect_vpn():
+    """VPN 状态
+
+    iKuai 的 openvpn_* 接口在 API 会话下一律回 "Access denied"（只有 Web 会话能读），
+    侧路反而更全：
+      * ppp_online 就是"认证服务 → 账号在线用户"那张表，能把所有拨入账号一次取全
+        （username / 隧道 IP / 对端公网 IP / 上线时间都在里面）
+      * 流量累计 ppp_online 不给，再从 monitor_lanip 里按隧道 IP 补齐
+      * 拨出去的隧道在 monitor_iface 的 iface_check 里，ppptype=PPTP/L2TP/OPENVPN
+    """
+    out = {"server": {"online": 0, "clients": []}, "links": []}
+
+    # 隧道流量的累计值只能从 LAN 终端表里拿（只有部分会话会出现在这张表里）
+    traffic = {}
+    try:
+        lr = _client.call("monitor_lanip", {
+            "TYPE": "data,total", "limit": "0,300",
+            "ORDER_BY": "ip_addr_int", "ORDER": "asc",
+        })
+        for d in lr.get("data") or []:
+            if (d.get("ppptype") or "").lower() in ("ovpn", "pptp", "l2tp"):
+                traffic[d.get("ip_addr")] = (d.get("total_up") or 0, d.get("total_down") or 0)
+    except Exception:
+        pass
+
+    rows = []
+    for _ in range(2):          # 刚登录后的第一次调用 iKuai 偶尔回空表
+        try:
+            r = _client.call("ppp_online", {"TYPE": "data,total", "limit": "0,200"})
+            rows = r.get("data") or []
+            if rows:
+                break
+        except Exception:
+            continue
+
+    for d in rows:
+        ip = d.get("ip_addr")
+        up, down = traffic.get(ip, (0, 0))
+        out["server"]["clients"].append({
+            "user": d.get("username") or "",
+            "ip": ip,
+            "ppp": (d.get("ppptype") or "").lower(),
+            "iface": d.get("interface") or "",
+            # 爱快把拨入方的公网地址放在 mac 字段里（OpenVPN 没有真 MAC）
+            "peer": d.get("mac") or "",
+            "port": (d.get("session") or "").rsplit("-", 1)[-1],
+            "since": _fmt_ts(d.get("auth_time")),
+            "up_total": up,
+            "down_total": down,
+        })
+    out["server"]["clients"].sort(key=lambda c: (c["iface"], c["ip"] or ""))
+    out["server"]["online"] = len(out["server"]["clients"])
+
+    ignore = set(getattr(config, "VPN_IGNORE", []) or [])
+    try:
+        ic = _client.call("monitor_iface", {"TYPE": "iface_check"})
+        for row in ic.get("iface_check", []) or []:
+            kind = (row.get("internet") or "").upper()
+            iface = row.get("interface") or ""
+            if kind not in ("OPENVPN", "PPTP", "L2TP"):
+                continue
+            if iface.lower() in ignore:      # 配置里点名的废弃隧道直接不显示
+                continue
+            out["links"].append({
+                "iface": iface,
+                "kind": kind,
+                "ip": row.get("ip_addr"),
+                "gateway": row.get("gateway"),
+                "ok": row.get("result") == "success",
+                "msg": row.get("errmsg") or "",
+            })
+    except Exception:
+        pass
+    return out
 
 
 def collect_devices():
@@ -181,5 +296,7 @@ def collect_devices():
             "uptime": d.get("uptime") or "",
             "static": bool(d.get("static_status")),
             "iface": d.get("interface") or "",
+            "ppp": (d.get("ppptype") or "").lower(),
+            "user": d.get("username") or "",
         })
     return devices
