@@ -18,6 +18,7 @@ _state = {
     "lan": None,
     "ifaces": {},
     "pve": None,
+    "fnos": None,
     "local": None,
     "switch": None,
     "miwifi": None,
@@ -703,6 +704,7 @@ def full_snapshot():
         "wan": config.WAN_LABELS,
         "vm_names": config.VM_NAMES,
         "vpn": config.VPN_CLIENTS,
+        "compute": {"pve": config.PVE_TITLE, "fnos": config.FNOS_TITLE},
     }
     return s
 

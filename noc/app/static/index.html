@@ -241,7 +241,7 @@
   <!-- ==================== 算力：PVE / 路由器 / 虚拟机明细 ==================== -->
   <div class="view view-compute" id="view-compute" role="tabpanel" aria-label="算力">
     <section class="panel p-pve">
-      <div class="p-head"><h2>PVE 8505</h2><span class="badge" id="pveBadge">—</span></div>
+      <div class="p-head"><h2 id="pveTitle">PVE</h2><span class="badge" id="pveBadge">—</span></div>
       <div class="gauge-row">
         <div class="gauge">
           <span class="g-k">CPU</span>
@@ -271,6 +271,28 @@
         </div>
       </div>
       <div class="comp-note" id="compNote">—</div>
+    </section>
+
+    <!-- 远程飞牛 NAS（经 VPN）：CPU/内存/磁盘/温度，和 PVE 并排看 -->
+    <section class="panel p-fnos">
+      <div class="p-head"><h2 id="fnosTitle">飞牛 NAS</h2><span class="badge" id="fnosBadge">离线</span></div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <span class="g-k">CPU</span>
+          <span class="g-v" id="fnosCpu">—</span>
+          <span class="g-bar"><i id="fnosCpuBar"></i></span>
+        </div>
+        <div class="gauge">
+          <span class="g-k">内存</span>
+          <span class="g-v" id="fnosMem">—</span>
+          <span class="g-bar"><i id="fnosMemBar"></i></span>
+        </div>
+      </div>
+      <div class="meta-line" id="fnosMeta">未连接</div>
+      <div class="store-mini" id="fnosDisks">
+        <div class="sm-row"><span>等待采集…</span></div>
+      </div>
+      <div class="comp-note" id="fnosNote">—</div>
     </section>
 
     <!-- 爱快主路由：它也是台机器，CPU / 内存 / 连接数一样占算力，跟 PVE 并排看 -->

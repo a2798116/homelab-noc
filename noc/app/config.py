@@ -89,6 +89,11 @@ SITE_NAME = SITE.get("name") or "Homelab NOC"
 # PVE 里的虚拟机在 PVE 后台常是 "WIFI"/"Copy-of-VM-WIFI" 这类代号，
 # 这里允许在本地配置里给 vmid 起一个中文名，前端 PVE 面板直接用它
 VM_NAMES = SITE.get("vm_names") or {}
+# 算力页各卡片的标题：站点相关（可能是地名），写在 config.local.json 的 site.compute 里，
+# 不硬编码进前端。缺失时用通用占位符。
+_COMPUTE_TITLES = SITE.get("compute") or {}
+PVE_TITLE = _COMPUTE_TITLES.get("pve") or "PVE"
+FNOS_TITLE = _COMPUTE_TITLES.get("fnos") or "飞牛 NAS"
 LAN_CIDR = SITE.get("subnet") or "192.168.1.0/24"
 try:
     LAN_PREFIX = str(ipaddress.ip_network(LAN_CIDR, strict=False).network_address)
@@ -107,6 +112,14 @@ PVE_URL = _env("PVE_URL", default="").rstrip("/")
 PVE_USER = _env("PVE_USER", default="root@pam")
 PVE_PASS = _env("PVE_PASS", default="")
 PVE_NODE = _env("PVE_NODE", default="pve")
+
+# ---------------------------------------------------------------- 远程飞牛 NAS（SSH）
+# 经 VPN 可达的远程 fnOS 主机。host 为空时采集器静默跳过。
+# 算力页会多一张卡片，和 PVE 并排展示 CPU/内存/磁盘/温度。
+FNOS_HOST = _env("FNOS_HOST", default="")
+FNOS_PORT = int(_env("FNOS_PORT", default="22"))
+FNOS_USER = _env("FNOS_USER", default="")
+FNOS_PASS = _env("FNOS_PASS", default="")
 
 # ---------------------------------------------------------------- 交换机
 SWITCH_URL = _env("SWITCH_URL", default="").rstrip("/")
@@ -174,6 +187,7 @@ POLL_SAMPLE = float(_env("POLL_SAMPLE", default="60"))     # 指标采样间隔
 POLL_FAST = float(_env("POLL_FAST", default="2"))        # 网关流速 + 本机网卡
 POLL_DEVICES = float(_env("POLL_DEVICES", default="5"))  # 终端列表
 POLL_PVE = float(_env("POLL_PVE", default="5"))
+POLL_FNOS = float(_env("POLL_FNOS", default="15"))   # 远程飞牛（经 VPN），不要太频繁
 POLL_PING = float(_env("POLL_PING", default="10"))
 POLL_SWITCH = float(_env("POLL_SWITCH", default="5"))    # 交换机端口速率（SSH 一次约 1.1s）
 POLL_VPN = float(_env("POLL_VPN", default="15"))         # VPN 隧道状态

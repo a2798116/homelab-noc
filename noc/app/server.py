@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 import state
 import store
-from collectors import ha, ikuai, localnet, miwifi, pinger, pve, switch
+from collectors import ha, ikuai, localnet, miwifi, pinger, pve, switch, fnos
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 MIME = {
@@ -62,6 +62,12 @@ def job_devices():
 
 def job_pve():
     state.update("pve", pve.collect())
+
+
+def job_fnos():
+    if not config.FNOS_HOST:
+        return  # 未配置远程飞牛时静默跳过
+    state.update("fnos", fnos.collect())
 
 
 def job_probes():
@@ -258,6 +264,7 @@ def main():
     _loop("ikuai", config.POLL_FAST, job_fast)
     _loop("devices", config.POLL_DEVICES, job_devices)
     _loop("pve", config.POLL_PVE, job_pve)
+    _loop("fnos", config.POLL_FNOS, job_fnos)
     _loop("probes", config.POLL_PING, job_probes)
     _loop("switch", config.POLL_SWITCH, job_switch)
     _loop("miwifi", config.POLL_MIWIFI, job_wifi)

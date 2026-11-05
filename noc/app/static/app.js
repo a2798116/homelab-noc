@@ -250,6 +250,13 @@
     if (tag2) tag2.textContent = (wl.wan2 || {}).isp || 'WAN2';
     if (tg1) tg1.textContent = nm('wan1', 'WAN1');
     if (tg2) tg2.textContent = nm('wan2', 'WAN2');
+
+    // 算力页卡片标题：站点相关（可能是地名），写在 config.local.json 的 site.compute
+    const ct = site.compute || {};
+    const pveT = document.getElementById('pveTitle');
+    const fnosT = document.getElementById('fnosTitle');
+    if (pveT && ct.pve) pveT.textContent = ct.pve;
+    if (fnosT && ct.fnos) fnosT.textContent = ct.fnos;
   }
 
   function portXY(node, idx) {
@@ -782,6 +789,7 @@
     renderWifi(snap.miwifi);
     renderProbes(snap.probes || []);
     renderPVE(snap.pve);
+    renderFnos(snap.fnos);
     renderIkuai(snap.ikuai, snap.ifaces, snap.wan_check);
     renderStore(snap.pve, snap.local);
     renderEvents(snap.events || []);
@@ -1385,6 +1393,52 @@
     if (key === state.vmKey) return;
     state.vmKey = key;
     renderVmTable(pve);
+  }
+
+  // 远程飞牛 NAS（经 VPN）：SSH 采回来的 CPU/内存/磁盘/温度/运行时长。
+  // 没配置或 VPN 断时 fnos 为 null，卡片显示「离线」。
+  function renderFnos(fnos) {
+    const badge = $('fnosBadge');
+    if (!fnos || !fnos.ok) {
+      $('fnosCpu').textContent = '—';
+      $('fnosMem').textContent = '—';
+      $('fnosMeta').textContent = fnos === null ? '未连接' : '采集失败';
+      if (badge) badge.textContent = '离线';
+      setBar($('fnosCpuBar'), 0);
+      setBar($('fnosMemBar'), 0);
+      const dk = $('fnosDisks');
+      if (dk) dk.innerHTML = '<div class="sm-row"><span>—</span></div>';
+      const nt = $('fnosNote');
+      if (nt) nt.textContent = '—';
+      return;
+    }
+    if (badge) badge.textContent = '在线';
+    $('fnosCpu').textContent = (fnos.cpu || 0).toFixed(0) + '%';
+    const memPct = fnos.mem_total ? (fnos.mem_used / fnos.mem_total * 100) : 0;
+    $('fnosMem').textContent = memPct.toFixed(0) + '%';
+    setBar($('fnosCpuBar'), fnos.cpu || 0);
+    setBar($('fnosMemBar'), memPct);
+    const tempStr = fnos.temp != null ? ' · ' + fnos.temp.toFixed(0) + '°C' : '';
+    $('fnosMeta').textContent = (fnos.cores || '?') + ' 核 · ' +
+      (fnos.mem_used / 1e9).toFixed(1) + '/' + (fnos.mem_total / 1e9).toFixed(0) + 'G' +
+      tempStr + ' · 运行 ' + fmtDur(fnos.uptime || 0);
+    // 磁盘：根分区 + 数据卷，每个一行带进度条
+    const dk = $('fnosDisks');
+    if (dk) {
+      const ds = fnos.disks || [];
+      dk.innerHTML = ds.length ? ds.map((d) => {
+        const pct = d.total ? (d.used / d.total * 100) : 0;
+        const lbl = d.label || d.mount || '磁盘';
+        return '<div class="sm-row"><span>' + esc(lbl) + '</span><b>' +
+          (d.used / 1e9).toFixed(0) + '/' + (d.total / 1e9).toFixed(0) + 'G · ' + pct.toFixed(0) + '%</b></div>' +
+          '<span class="g-bar"><i style="width:' + Math.min(pct, 100) + '%"></i></span>';
+      }).join('') : '<div class="sm-row"><span>无磁盘数据</span></div>';
+    }
+    const nt = $('fnosNote');
+    if (nt) {
+      nt.innerHTML = esc(fnos.model || '—') + '<br>' + esc(fnos.kernel || '—') +
+        '<br>负载 ' + (fnos.load1 || 0).toFixed(2) + ' · ' + esc(fnos.hostname || fnos.host || '');
+    }
   }
 
   // 算力页的虚拟机全表：原来右栏只挤了「名字 + 流量」，这里把 CPU / 内存 / 磁盘 / 运行时长
