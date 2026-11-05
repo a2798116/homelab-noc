@@ -17,7 +17,7 @@ import os
 # ---------------------------------------------------------------- 版本
 # 容器镜像只 COPY app/，仓库根目录的 VERSION 不在镜像里，所以保留兜底常量。
 # 发布时只需改 VERSION 与 CHANGELOG.md，容器重启后 /api/health 会跟着变。
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 try:
     _ver_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -260,7 +260,10 @@ POLL_LANPING = float(_env("POLL_LANPING", default="15"))  # 全量 ping 终端�
 # 服务器/交换机这类长期不跟网关说话的设备会被周期性从在线表里踢掉。
 # 所以要靠探活（ICMP / AP 客户端表）兜底，宽限期给够，别让墙上格子乱闪。
 LAN_PING = _env("LAN_PING", default="1") not in ("0", "false", "False", "")
-DEV_GRACE = float(_env("DEV_GRACE", default="45"))       # 消失多久才认离线（秒）
+DEV_GRACE = float(_env("DEV_GRACE", default="120"))     # 消失多久才认离线（秒）
+# 一次 ICMP 探通保留多久：手机 / IoT 省电时会连续几轮不回 ping，
+# 单轮失败就丢证据会让在线设备被误判离线、反复播上下线。
+LANPING_GRACE = float(_env("LANPING_GRACE", default="180"))
 DEV_REPEAT = float(_env("DEV_REPEAT", default="180"))    # 同一设备上下线事件最小间隔
 
 # ---------------------------------------------------------------- 历史

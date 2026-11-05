@@ -50,6 +50,18 @@ _prev_lamp = {}
 _prev_cover = {}
 # MAC(大写) → {"ap": 名称, "node": 拓扑节点, "band": 频段}
 _wifi_map = {}
+# IP → 同一份信息。iPhone/Apple 设备用随机私有 MAC，AP 表与 iKuai 表的
+# MAC 经常对不上，只按 MAC 匹配会把明明连着 Wi-Fi 的设备当成失联。
+_wifi_ip_map = {}
+# ip → AP 客户端表里最后一次看到它的时间。手机休眠时 AP 关联表也会短暂移除，
+# 单轮缺失不该立刻当成失联。
+_wifi_last = {}
+# ip → 最后一次 ICMP 探通时间。手机休眠时可能连续几轮不回 ping，
+# 给每次成功留一段有效期，别让单轮失败就把在线证据清零。
+_lanping_last = {}
+# ip → {"dev": 最后一次完整设备字典, "ts": 时间戳}。
+# 设备被移出终端墙后仍要靠它继续探活，并在探通时把名字原样补回来。
+_known_devs = {}
 
 
 def _vpn_label(dev):
@@ -242,28 +254,62 @@ def _probe_up(ip):
     for p in _state.get("probes") or []:
         if p.get("ip") == ip and p.get("up"):
             return True
-    return (_state.get("lanping") or {}).get(ip) is True
+    if (_state.get("lanping") or {}).get(ip) is True:
+        return True
+    last = _lanping_last.get(ip)
+    return bool(last and time.time() - last <= config.LANPING_GRACE)
 
 
 def _wifi_alive(dev):
     """AP 的客户端表里还有这台设备 → 它连着 Wi-Fi，肯定在线。
 
-    比 ICMP 更可靠：IoT 设备常年休眠、不响应 ping，但 AP 的关联表里跑不掉。
+    iPhone 的「私有 Wi-Fi 地址」会让 AP 表里的 MAC 和 iKuai 表里的对不上，
+    所以 MAC 匹配不上时再按 IP 兜一次。
     """
     mac = (dev.get("mac") or "").upper()
-    return bool(mac) and mac in _wifi_map
+    if mac and mac in _wifi_map:
+        return True
+    ip = dev.get("ip") or ""
+    if ip and ip in _wifi_ip_map:
+        return True
+    last = _wifi_last.get(ip)
+    return bool(last and time.time() - last <= config.LANPING_GRACE)
 
 
 def update_lanping(payload):
-    """整轮 ICMP 探测结果整体替换：某轮没探到的 IP 不应沿用上一轮的结论"""
+    """并入本轮 ICMP 结果，同时记录「最近探通时间」。
+
+    单轮整体替换过于苛刻：手机休眠时连续几轮不回 ping 就会把在线证据清零，
+    接着被判离线、过一会儿又上线，事件流刷屏。这里给每次成功留一段有效期。
+    """
+    now = time.time()
+    cur = dict(payload or {})
     with _lock:
-        _state["lanping"] = dict(payload or {})
+        for ip, ok in cur.items():
+            if ok:
+                _lanping_last[ip] = now
+        for ip, ts in list(_lanping_last.items()):
+            if now - ts > config.LANPING_GRACE * 2:
+                _lanping_last.pop(ip, None)
+        _state["lanping"] = cur
 
 
 def device_ips():
-    """当前终端墙上所有设备的 IP（探活目标）"""
+    """当前终端墙上所有设备的 IP"""
     with _lock:
         return [d.get("ip") for d in (_state.get("devices") or []) if d.get("ip")]
+
+
+def probe_ips():
+    """全量 ICMP 的探测目标：墙上 + 资产表 + 最近见过的动态设备。
+
+    被判离线移出墙的设备也在列表里，探通就能自己回来，不必等 iKuai 重新报它。
+    """
+    with _lock:
+        ips = {d.get("ip") for d in (_state.get("devices") or []) if d.get("ip")}
+        ips.update(assets.DEVICE_META.keys())
+        ips.update(_known_devs.keys())
+        return [ip for ip in ips if ip]
 
 
 def update_devices(rows):
@@ -295,6 +341,15 @@ def update_devices(rows):
         cur = {d["ip"]: d for d in out}
         for ip in cur:
             _dev_last_seen[ip] = now
+
+        # 记住最近见过的设备（含未登记进资产表的手机）。被移出墙之后仍要
+        # 继续探活，探通时才能用这份缓存把名字、分类、图标原样补回来。
+        for d in out:
+            if d.get("ip"):
+                _known_devs[d["ip"]] = {"dev": dict(d), "ts": now}
+        for ip, rec in list(_known_devs.items()):
+            if now - rec["ts"] > 86400:
+                _known_devs.pop(ip, None)
 
         # ---- 本轮到 iKuai 列表里没了的设备 ----
         for ip, old in prev.items():
@@ -345,17 +400,17 @@ def update_devices(rows):
             _dev_last_seen.pop(ip, None)
             _dev_gone.pop(ip, None)
 
-        # ---- 探活可达、但 iKuai 完全不报的设备（交换机/AP 这类不跟网关说话的）----
-        # 不补的话它们永远进不了终端墙：实测 10.3 交换机在 iKuai 表里 25/25 次缺席
-        for pr in _state.get("probes") or []:
-            ip = pr.get("ip") or ""
-            if ip in cur or not pr.get("up"):
+        # ---- 探活可达、但 iKuai 这轮完全不报的设备 ----
+        # 旧逻辑只认主网段前缀且必须登记在资产表里，
+        # 于是无线 VLAN 段的手机、以及未登记的动态设备即使 ping 得通也补不回墙，
+        # 只能等 iKuai 下一轮报它 —— 这就是「离线→上线」反复刷屏的根因。
+        # 现在改成：只要最近探通过，无论网段、是否登记，都用缓存原样补回来。
+        for ip in sorted(set(_known_devs) | set(assets.DEVICE_META)):
+            if ip in cur or not _probe_up(ip):
                 continue
-            if not ip.startswith(config.LAN_PREFIX) or ip not in assets.DEVICE_META:
-                continue
-            old = prev.get(ip)
-            if old:
-                keep = dict(old)
+            rec = _known_devs.get(ip)
+            if rec:
+                keep = dict(rec["dev"])
             else:
                 keep = _classify({
                     "ip": ip, "mac": "", "hostname": "", "vendor": "",
@@ -363,9 +418,13 @@ def update_devices(rows):
                     "up": 0, "down": 0, "up_total": 0, "down_total": 0,
                     "today_total": 0, "uptime": "", "static": False, "iface": "",
                 })
-                keep["last_seen"] = int(now)
             keep["ikuai_seen"] = False
             keep["stale"] = False
+            keep["last_seen"] = int(now)
+            # iKuai 这轮没报，速率是上一拍的残留值，清零避免「灰卡还在跑流量」
+            keep["up"] = 0
+            keep["down"] = 0
+            keep["conn"] = 0
             out.append(keep)
             cur[ip] = keep
 
@@ -438,7 +497,7 @@ def update_switch(payload):
 
 def update_wifi(payload):
     """小米 AP：维护 MAC → 归属 AP 映射，供终端详情显示接入点"""
-    m = {}
+    m, by_ip = {}, {}
     for a in payload.get("aps") or []:
         for c in a.get("clients") or []:
             mac = (c.get("mac") or "").upper()
@@ -446,11 +505,22 @@ def update_wifi(payload):
                 continue
             dev = c.get("dev") or ""
             band = "5G" if dev.startswith("wl0") else ("2.4G" if dev.startswith("wl1") else "")
-            m[mac] = {"ap": a.get("label") or a.get("host"), "node": a.get("node"),
-                      "band": band, "up": c.get("up"), "down": c.get("down")}
+            info = {"ap": a.get("label") or a.get("host"), "node": a.get("node"),
+                    "band": band, "up": c.get("up"), "down": c.get("down")}
+            m[mac] = info
+            if c.get("ip"):
+                by_ip[c["ip"]] = info
+    now = time.time()
     with _lock:
         _wifi_map.clear()
         _wifi_map.update(m)
+        _wifi_ip_map.clear()
+        _wifi_ip_map.update(by_ip)
+        for ip in by_ip:
+            _wifi_last[ip] = now
+        for ip, ts in list(_wifi_last.items()):
+            if now - ts > config.LANPING_GRACE * 2:
+                _wifi_last.pop(ip, None)
         _state["miwifi"] = payload
         _state["ts"] = int(time.time())
         _state["errors"].pop("miwifi", None)

@@ -89,9 +89,9 @@ def job_lanping():
     """终端墙全量探活：iKuai 漏报的设备靠这一轮 ICMP 兜回来"""
     if not config.LAN_PING:
         return
-    ips = state.device_ips()
-    ips.extend(assets.DEVICE_META.keys())     # 登记过但这轮不在墙上的也要探
-    state.update_lanping(lanping.collect(ips))
+    # 当前墙上 + 资产表 + 最近见过的动态设备（含未登记的手机）。
+    # 被判离线移出墙的设备也必须继续探，否则只能等 iKuai 下一轮再报它。
+    state.update_lanping(lanping.collect(state.probe_ips()))
 
 
 def job_camsync():
