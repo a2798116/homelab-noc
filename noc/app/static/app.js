@@ -1446,44 +1446,116 @@
 
   // 远程爱快（VPN 站点）：经 VPN API 采集的远程路由器状态。
   // 卡片展示 CPU/内存/在线数/连接数/实时速率，隧道断时显示「离线」。
+  // 远程爱快的网口名映射：VPN 站点通常是 lan1/lan2/wan1/ovpn_xxx
+  const RIK_SEG_LABEL = (k) => {
+    if (/^wan/i.test(k)) return 'WAN';
+    if (/^ovpn|^pptp|^l2tp/i.test(k)) return 'VPN 隧道';
+    if (/^lan/i.test(k)) return k.toUpperCase();
+    return k;
+  };
+  let _rikCoreKey = '';
+  let _rikStatKey = '';
+
   function renderRemoteIkuai(rik) {
     const badge = $('rikuaiBadge');
     if (!rik || !rik.ok) {
-      $('rikuaiCpu').textContent = '—';
-      $('rikuaiMem').textContent = '—';
-      $('rikuaiMeta').textContent = rik === null ? '未连接' : '采集失败';
+      $('rikCpu').textContent = '—';
+      $('rikMem').textContent = '—';
+      $('rikMeta').textContent = rik === null ? '未连接' : '采集失败';
       if (badge) badge.textContent = '离线';
-      setBar($('rikuaiCpuBar'), 0);
-      setBar($('rikuaiMemBar'), 0);
-      const st = $('rikuaiStats');
-      if (st) st.innerHTML = '<div class="sm-row"><span>—</span></div>';
-      const nt = $('rikuaiNote');
-      if (nt) nt.textContent = '—';
+      setBar($('rikCpuBar'), 0);
+      setBar($('rikMemBar'), 0);
+      $('rikUptime').textContent = '';
+      ['rikCores', 'rikStats', 'rikSegs', 'rikWans'].forEach((id) => { const e = $(id); if (e) e.innerHTML = '<span class="ik-empty">—</span>'; });
+      const nt = $('rikNote'); if (nt) nt.textContent = '—';
+      drawRikChart();
       return;
     }
     if (badge) badge.textContent = '在线';
-    $('rikuaiCpu').textContent = (rik.cpu || 0).toFixed(0) + '%';
+    const cpu = rik.cpu || 0;
     const memPct = rik.mem_used_pct || 0;
-    $('rikuaiMem').textContent = memPct.toFixed(0) + '%';
-    setBar($('rikuaiCpuBar'), rik.cpu || 0);
-    setBar($('rikuaiMemBar'), memPct);
-    $('rikuaiMeta').textContent = (rik.cores || '?') + ' 核 · ' +
-      (rik.mem_used / 1e9).toFixed(1) + '/' + (rik.mem_total / 1e9).toFixed(0) + 'G · ' +
-      '在线 ' + (rik.online || 0) + ' · 连接 ' + (rik.conn_total || 0) +
-      ' · 运行 ' + fmtDur(rik.uptime || 0);
-    // 实时上下行速率
-    const st = $('rikuaiStats');
-    if (st) {
-      st.innerHTML =
-        '<div class="sm-row"><span>↑ 上行</span><b>' + fmtRateShort(rik.up_bps || 0) + '</b></div>' +
-        '<div class="sm-row"><span>↓ 下行</span><b>' + fmtRateShort(rik.down_bps || 0) + '</b></div>';
+    $('rikCpu').textContent = cpu.toFixed(0) + '%';
+    $('rikMem').textContent = memPct.toFixed(0) + '%';
+    setBar($('rikCpuBar'), cpu);
+    setBar($('rikMemBar'), memPct);
+
+    const cores = rik.cpu_cores || [];
+    $('rikUptime').textContent = cores.length ? cores.length + ' 核' : '';
+    $('rikMeta').textContent = (rik.mem_used / 1e9).toFixed(1) + '/' + (rik.mem_total / 1e9).toFixed(0) + 'G'
+      + ' · ' + (rik.online || 0) + ' 台在线 · ' + (rik.conn_total || 0).toLocaleString() + ' 会话'
+      + ' · 运行 ' + fmtDur(rik.uptime || 0);
+
+    // 每核占用
+    const ck = cores.map((c) => Math.round(c)).join(',');
+    const cbox = $('rikCores');
+    if (cbox) {
+      if (!cores.length) {
+        cbox.innerHTML = '<span class="ik-empty">未上报核心占用</span>';
+      } else if (ck !== _rikCoreKey) {
+        _rikCoreKey = ck;
+        cbox.innerHTML = cores.map((c, i) =>
+          `<span class="ik-core${c > 85 ? ' hot' : ''}" title="核心 ${i + 1} · ${c.toFixed(1)}%">`
+          + `<span class="ik-ck">核 ${i + 1}</span><em>${c.toFixed(0)}%</em></span>`
+        ).join('');
+      }
+      $('rikPeak').textContent = cores.length ? '峰值 ' + Math.max.apply(null, cores).toFixed(0) + '%' : '—';
     }
-    const nt = $('rikuaiNote');
-    if (nt) {
-      nt.innerHTML = '有线 ' + (rik.online_wired || 0) + ' · 无线 ' + (rik.online_wireless || 0) +
-        '<br>每核 ' + (rik.cpu_cores || []).map((v) => v.toFixed(0) + '%').join(' ') +
-        '<br>' + esc((rik.host || '').replace(/^https?:\/\//, ''));
+
+    // 四格统计：远程 V3 不分 TCP/UDP，副标题改成线路类型
+    const lines = ((rik.wan_check || {}).lines) || [];
+    const lineType = lines.map((l) => l.internet).filter(Boolean).join(' · ') || '—';
+    const stats = [
+      ['会话总数', (rik.conn_total || 0).toLocaleString(), lineType],
+      ['在线终端', (rik.online || 0) + ' 台', `有线 ${rik.online_wired || 0} · 无线 ${rik.online_wireless || 0}`],
+      ['累计上行', fmtBytes(rik.up_total || 0), '本次运行'],
+      ['累计下行', fmtBytes(rik.down_total || 0), '本次运行'],
+    ];
+    const sk = stats.map((s) => s.join('|')).join('~');
+    if (sk !== _rikStatKey && $('rikStats')) {
+      _rikStatKey = sk;
+      $('rikStats').innerHTML = stats.map((s) => `<div class="iks">
+        <span class="k">${s[0]}</span><b class="v">${esc(s[1])}</b><span class="n">${esc(s[2])}</span>
+      </div>`).join('');
     }
+
+    // 网段与隧道：lan/ovpn 口的实时收发（不含 wan，wan 放线路区块）
+    const f = rik.ifaces || {};
+    const segs = Object.keys(f).filter((k) => !/^wan/i.test(k)).map((k) => ({
+      name: RIK_SEG_LABEL(k), ip: (f[k] || {}).ip || '—',
+      up: (f[k] || {}).up || 0, down: (f[k] || {}).down || 0,
+    }));
+    const sbox = $('rikSegs');
+    if (sbox) {
+      sbox.innerHTML = segs.length ? segs.map((s) => `<div class="ik-seg">
+        <span class="ik-sn">${esc(s.name)}</span>
+        <span class="ik-sip">${esc(s.ip)}</span>
+        <span class="ik-sw">↑ ${fmtRateShort(s.up)} · ↓ ${fmtRateShort(s.down)}</span>
+      </div>`).join('') : '<span class="ik-empty">未读到网段</span>';
+      $('rikSegNote').textContent = segs.length ? segs.length + ' 个' : '';
+    }
+
+    // 线路实时：wan1 + VPN 隧道，每条 IP + 在线状态 + 速率
+    const wbox = $('rikWans');
+    if (wbox) {
+      let td = 0, tu = 0;
+      wbox.innerHTML = lines.map((l) => {
+        const it = f[l.iface] || {};
+        const bad = l.ok === false;
+        td += it.down || 0; tu += it.up || 0;
+        const tag = RIK_SEG_LABEL(l.iface);
+        return `<div class="ik-wan${bad ? ' bad' : ''}">
+          <span class="wan2-tag">${esc(tag)}</span>
+          <span class="ik-wip">${esc(l.ip || it.ip || '—')}</span>
+          ${bad ? '<span class="ik-wbad">断线</span>' : ''}
+          <span class="ik-wr">↑ ${fmtRateShort(it.up)} · ↓ ${fmtRateShort(it.down)}</span>
+        </div>`;
+      }).join('') || '<span class="ik-empty">未读到线路</span>';
+      $('rikSum').textContent = '↓ ' + fmtRateShort(td) + ' · ↑ ' + fmtRateShort(tu);
+    }
+
+    $('rikNote').innerHTML = '数据源 远程爱快 sysstat / monitor_iface<br>'
+      + '经 VPN 隧道采集 · 每 15 秒刷新';
+    drawRikChart();
   }
 
   // 算力页的虚拟机全表：原来右栏只挤了「名字 + 流量」，这里把 CPU / 内存 / 磁盘 / 运行时长
@@ -1780,16 +1852,25 @@
   // 指标表里每分钟存了 cpu / mem，这里按 15 分钟聚合画出来。
   // 单看一个「2%」判断不了是常态还是异常，有曲线才知道。
   const PVE_TREND = { rows: [], at: 0 };
+  const RIK_TREND = { rows: [], at: 0 };
 
   async function loadPveTrend(force) {
     const now = Date.now();
     if (!force && now - PVE_TREND.at < 60000) { drawPveChart(); return; }
     PVE_TREND.at = now;
+    RIK_TREND.at = now;
     try {
       const r = await fetch('/api/metrics?hours=24&step=900');
       PVE_TREND.rows = (await r.json()) || [];
     } catch (e) {
       PVE_TREND.rows = [];
+    }
+    // 远程爱快趋势（单独一张表，VPN 断时为空）
+    try {
+      const rr = await fetch('/api/rmetrics?hours=24&step=900');
+      RIK_TREND.rows = (await rr.json()) || [];
+    } catch (e) {
+      RIK_TREND.rows = [];
     }
     drawPveChart();
   }
@@ -1798,6 +1879,7 @@
     const cv = $('pveChart');
     if (!cv) return;
     drawIkChart();
+    drawRikChart();
     const rows = PVE_TREND.rows || [];
     const ctx = cv.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -1944,6 +2026,61 @@
     if (note) {
       note.textContent = '峰值 ↓ ' + fmtRateShort(dmax) + ' · ↑ ' + fmtRateShort(umax);
     }
+  }
+
+  // 远程爱快带宽趋势：画法和 drawIkChart 一致，数据来自 /api/rmetrics
+  function drawRikChart() {
+    const cv = $('rikChart');
+    if (!cv) return;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    const rows = (RIK_TREND.rows || []).filter((r) => r.down || r.up);
+    const ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const note = $('rikTrendNote');
+    if (rows.length < 2) {
+      if (note) note.textContent = '采样不足';
+      ctx.fillStyle = cssVar('--txt-3');
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('攒够采样后显示走势', w / 2, h / 2 + 3);
+      return;
+    }
+    const dmax = Math.max.apply(null, rows.map((r) => r.down || 0));
+    const umax = Math.max.apply(null, rows.map((r) => r.up || 0));
+    const top = Math.max(dmax, umax, 1024);
+    const padL = 2, padR = 2, padT = 8, padB = 6;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const X = (i) => padL + iw * i / (rows.length - 1);
+    const Y = (v) => padT + ih * (1 - Math.min(1, (v || 0) / top));
+    const trace = (key) => {
+      ctx.beginPath();
+      rows.forEach((r, i) => {
+        const px = X(i), py = Y(r[key]);
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+    };
+    trace('down');
+    ctx.lineTo(X(rows.length - 1), h - padB);
+    ctx.lineTo(X(0), h - padB);
+    ctx.closePath();
+    ctx.fillStyle = alpha(cssVar('--cyan'), 0.13);
+    ctx.fill();
+    trace('down');
+    ctx.strokeStyle = cssVar('--cyan');
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    trace('up');
+    ctx.strokeStyle = cssVar('--ok');
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    if (note) note.textContent = '峰值 ↓ ' + fmtRateShort(dmax) + ' · ↑ ' + fmtRateShort(umax);
   }
 
   function drawHistChart(rows) {

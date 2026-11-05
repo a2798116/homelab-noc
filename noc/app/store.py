@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS metrics (
   cpu       REAL DEFAULT 0,
   mem       REAL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS rmetrics (
+  ts        INTEGER PRIMARY KEY,
+  wan_up    REAL DEFAULT 0,
+  wan_down  REAL DEFAULT 0,
+  cpu       REAL DEFAULT 0,
+  mem       REAL DEFAULT 0,
+  online    INTEGER DEFAULT 0
+);
 """
 
 
@@ -198,6 +207,55 @@ def query_metrics(hours=24, step=60):
              "mem": round(r["mem"] or 0, 1)} for r in rows]
 
 
+# ---------------------------------------------------------------- 远程站点指标
+
+def add_rmetric(ts, wan_up=0, wan_down=0, cpu=0, mem=0, online=0):
+    """远程爱快（VPN 站点）的指标采样，单独一张表，不和本站混淆"""
+    if _conn is None:
+        return
+    with _lock:
+        try:
+            _conn.execute(
+                "INSERT OR REPLACE INTO rmetrics (ts, wan_up, wan_down, cpu, mem, online) "
+                "VALUES (?,?,?,?,?,?)",
+                (int(ts), float(wan_up or 0), float(wan_down or 0),
+                 float(cpu or 0), float(mem or 0), int(online or 0)),
+            )
+            _conn.commit()
+        except Exception:
+            pass
+
+
+def query_rmetrics(hours=24, step=60):
+    """远程爱快 24h 趋势，聚合逻辑同 query_metrics"""
+    if _conn is None:
+        return []
+    span = int(float(hours) * 3600)
+    cand = [int(step)]
+    s = int(step)
+    while s > 60:
+        s = max(60, s // 3)
+        cand.append(s)
+    rows = []
+    with _lock:
+        for s in cand:
+            try:
+                rows = _conn.execute(
+                    "SELECT (ts / ?) * ? AS bucket, AVG(wan_up) AS up, AVG(wan_down) AS down, "
+                    "AVG(cpu) AS cpu, AVG(mem) AS mem, MAX(online) AS online "
+                    "FROM rmetrics WHERE ts >= strftime('%s','now') - ? "
+                    "GROUP BY bucket ORDER BY bucket ASC",
+                    (int(s), int(s), span),
+                ).fetchall()
+            except Exception:
+                return []
+            if len(rows) >= 24:
+                break
+    return [{"t": r["bucket"], "up": round(r["up"] or 0, 1), "down": round(r["down"] or 0, 1),
+             "cpu": round(r["cpu"] or 0, 1), "mem": round(r["mem"] or 0, 1),
+             "online": r["online"] or 0} for r in rows]
+
+
 # ---------------------------------------------------------------- 维护
 
 def prune(days=90):
@@ -209,6 +267,7 @@ def prune(days=90):
         try:
             n = _conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,)).rowcount
             _conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
+            _conn.execute("DELETE FROM rmetrics WHERE ts < ?", (cutoff,))
             _conn.commit()
             return n
         except Exception:

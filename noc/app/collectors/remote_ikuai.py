@@ -98,11 +98,8 @@ def _pct(s):
         return 0.0
 
 
-def collect():
+def _collect_system(r):
     """sysstat：CPU/内存/在线数/连接数/实时流速"""
-    if not config.RIKUAI_URL:
-        raise RuntimeError("未配置 RIKUAI_URL（见 .env.example）")
-    r = _client.call("sysstat", {"TYPE": "cpu,memory,uptime,online_user,stream"})
     cpu = r.get("cpu") or []
     cpu_vals = [_pct(x) for x in cpu]
     mem = r.get("memory") or {}
@@ -111,8 +108,6 @@ def collect():
     mem_total_kb = mem.get("total", 0)
     mem_avail_kb = mem.get("available", mem.get("free", 0))
     return {
-        "ok": True,
-        "host": config.RIKUAI_URL,
         "cpu": round(sum(cpu_vals) / len(cpu_vals), 1) if cpu_vals else 0,
         "cores": len(cpu_vals),
         "cpu_cores": [round(v, 1) for v in cpu_vals],
@@ -124,6 +119,68 @@ def collect():
         "online_wired": online.get("count_wired", 0),
         "online_wireless": online.get("count_wireless", 0),
         "conn_total": stream.get("connect_num", 0),
+        "conn_tcp": stream.get("tcp_connect_num", 0),
+        "conn_udp": stream.get("udp_connect_num", 0),
         "up_bps": stream.get("upload", 0),
         "down_bps": stream.get("download", 0),
+        "up_total": stream.get("total_up", 0),
+        "down_total": stream.get("total_down", 0),
     }
+
+
+def _collect_interfaces():
+    """wan1 / lan1 / 隧道口实时流速（monitor_iface iface_stream）"""
+    r = _client.call("monitor_iface", {"TYPE": "iface_stream"})
+    out = {}
+    for row in r.get("iface_stream", []) or []:
+        name = row.get("interface")
+        out[name] = {
+            "iface": name,
+            "ip": row.get("ip_addr"),
+            "up": row.get("upload", 0),
+            "down": row.get("download", 0),
+            "up_total": row.get("total_up", 0),
+            "down_total": row.get("total_down", 0),
+        }
+    return out
+
+
+def _collect_wan_check():
+    """线路检测：wan1 + VPN 隧道各在线状态（monitor_iface iface_check）"""
+    r = _client.call("monitor_iface", {"TYPE": "iface_check"})
+    rows = r.get("iface_check") or []
+    lines = []
+    for row in rows:
+        lines.append({
+            "iface": row.get("interface"),
+            "ip": row.get("ip_addr"),
+            "gateway": row.get("gateway"),
+            "internet": row.get("internet"),
+            "ok": row.get("result") == "success",
+            "msg": row.get("errmsg"),
+        })
+    return {"lines": lines}
+
+
+def collect():
+    """一次会话拉 sysstat + monitor_iface，组合返回算力页所需的全部字段
+
+    返回结构和本地 ikuai.collect_system / collect_interfaces / collect_wan_check
+    拼起来一致，前端可复用同一套渲染逻辑。
+    """
+    if not config.RIKUAI_URL:
+        raise RuntimeError("未配置 RIKUAI_URL（见 .env.example）")
+    s = _client.call("sysstat", {"TYPE": "cpu,memory,uptime,online_user,stream"})
+    base = _collect_system(s)
+    base["ok"] = True
+    base["host"] = config.RIKUAI_URL
+    # 接口与线路检测：失败不致命，降级为空
+    try:
+        base["ifaces"] = _collect_interfaces()
+    except Exception:
+        base["ifaces"] = {}
+    try:
+        base["wan_check"] = _collect_wan_check()
+    except Exception:
+        base["wan_check"] = {"lines": []}
+    return base

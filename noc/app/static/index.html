@@ -295,26 +295,48 @@
       <div class="comp-note" id="fnosNote">—</div>
     </section>
 
-    <!-- 远程爱快（VPN 站点）：CPU/内存/在线数/连接数/实时速率 -->
+    <!-- 远程爱快（VPN 站点）：完整路由器监控，版式同 iKuai 主路由 -->
     <section class="panel p-rikuai">
-      <div class="p-head"><h2 id="rikuaiTitle">远程爱快</h2><span class="badge" id="rikuaiBadge">离线</span></div>
+      <div class="p-head">
+        <h2 id="rikuaiTitle">远程爱快</h2>
+        <span class="p-head-r"><span class="hint" id="rikUptime">—</span><span class="badge" id="rikuaiBadge">离线</span></span>
+      </div>
       <div class="gauge-row">
         <div class="gauge">
           <span class="g-k">CPU</span>
-          <span class="g-v" id="rikuaiCpu">—</span>
-          <span class="g-bar"><i id="rikuaiCpuBar"></i></span>
+          <span class="g-v" id="rikCpu">—</span>
+          <span class="g-bar"><i id="rikCpuBar"></i></span>
         </div>
         <div class="gauge">
           <span class="g-k">内存</span>
-          <span class="g-v" id="rikuaiMem">—</span>
-          <span class="g-bar"><i id="rikuaiMemBar"></i></span>
+          <span class="g-v" id="rikMem">—</span>
+          <span class="g-bar"><i id="rikMemBar"></i></span>
         </div>
       </div>
-      <div class="meta-line" id="rikuaiMeta">未连接</div>
-      <div class="store-mini" id="rikuaiStats">
-        <div class="sm-row"><span>等待采集…</span></div>
+      <div class="meta-line" id="rikMeta">未连接</div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>每核占用</span><i id="rikPeak">—</i></div>
+        <div class="ik-cores" id="rikCores"></div>
       </div>
-      <div class="comp-note" id="rikuaiNote">—</div>
+
+      <div class="ik-stats" id="rikStats"></div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>网段与隧道</span><i id="rikSegNote">—</i></div>
+        <div class="ik-segs" id="rikSegs"></div>
+      </div>
+
+      <div class="ik-sec">
+        <div class="ik-h"><span>线路实时</span><i id="rikSum">—</i></div>
+        <div class="ik-wans" id="rikWans"></div>
+      </div>
+
+      <div class="ik-trend">
+        <div class="ik-h"><span>带宽趋势 · 近 24 小时</span><i id="rikTrendNote">—</i></div>
+        <canvas id="rikChart" height="70"></canvas>
+      </div>
+      <div class="comp-note" id="rikNote">—</div>
     </section>
 
     <!-- 爱快主路由：它也是台机器，CPU / 内存 / 连接数一样占算力，跟 PVE 并排看 -->

@@ -322,9 +322,8 @@ body {
    它的 CPU / 内存 / 会话数跟 PVE 放一起看，才知道算力到底花在哪。 */
 .view-compute {
   grid-template-columns: 340px 312px minmax(0, 1fr);
-  grid-template-rows: auto auto auto;
-  grid-template-areas: "pve ik vm"
-                       "fnos ik vm"
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "pve ik fnos"
                        "rikuai ik vm";
   gap: 10px;
 }

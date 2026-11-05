@@ -74,6 +74,7 @@ def job_rikuai():
     if not config.RIKUAI_URL:
         return  # 未配置远程爱快时静默跳过
     state.update("rikuai", remote_ikuai.collect())
+    state.sample_rmetric()   # 采样入 rmetrics 表，供 24h 趋势图
 
 
 def job_probes():
@@ -205,6 +206,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, state.event_days())
         if p == "/api/metrics":
             return self._send(200, state.metric_history(
+                float((q.get("hours") or ["24"])[0]),
+                int((q.get("step") or ["60"])[0]),
+            ))
+        if p == "/api/rmetrics":
+            return self._send(200, state.rmetric_history(
                 float((q.get("hours") or ["24"])[0]),
                 int((q.get("step") or ["60"])[0]),
             ))

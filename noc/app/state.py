@@ -190,6 +190,31 @@ def metric_history(hours=24, step=60):
     return store.query_metrics(hours, step)
 
 
+def sample_rmetric():
+    """远程爱快（VPN 站点）的指标采样，单独入 rmetrics 表"""
+    with _lock:
+        rk = dict(_state.get("rikuai") or {})
+    if not rk or not rk.get("ok"):
+        return
+    # wan1 是主上行口，VPN 断时 ifaces 为空，跳过避免插一串 0
+    ifaces = rk.get("ifaces") or {}
+    w1 = ifaces.get("wan1") or {}
+    if not (w1.get("up") or w1.get("down")) and not rk.get("down_bps"):
+        return
+    store.add_rmetric(
+        int(time.time()),
+        wan_up=rk.get("up_bps") or 0,
+        wan_down=rk.get("down_bps") or 0,
+        cpu=rk.get("cpu") or 0,
+        mem=rk.get("mem_used_pct") or 0,
+        online=rk.get("online") or 0,
+    )
+
+
+def rmetric_history(hours=24, step=60):
+    return store.query_rmetrics(hours, step)
+
+
 def update(section, value):
     with _lock:
         _state[section] = value
