@@ -295,6 +295,28 @@
       <div class="comp-note" id="fnosNote">—</div>
     </section>
 
+    <!-- 远程爱快（VPN 站点）：CPU/内存/在线数/连接数/实时速率 -->
+    <section class="panel p-rikuai">
+      <div class="p-head"><h2 id="rikuaiTitle">远程爱快</h2><span class="badge" id="rikuaiBadge">离线</span></div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <span class="g-k">CPU</span>
+          <span class="g-v" id="rikuaiCpu">—</span>
+          <span class="g-bar"><i id="rikuaiCpuBar"></i></span>
+        </div>
+        <div class="gauge">
+          <span class="g-k">内存</span>
+          <span class="g-v" id="rikuaiMem">—</span>
+          <span class="g-bar"><i id="rikuaiMemBar"></i></span>
+        </div>
+      </div>
+      <div class="meta-line" id="rikuaiMeta">未连接</div>
+      <div class="store-mini" id="rikuaiStats">
+        <div class="sm-row"><span>等待采集…</span></div>
+      </div>
+      <div class="comp-note" id="rikuaiNote">—</div>
+    </section>
+
     <!-- 爱快主路由：它也是台机器，CPU / 内存 / 连接数一样占算力，跟 PVE 并排看 -->
     <section class="panel p-ikuai">
       <div class="p-head">

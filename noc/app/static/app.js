@@ -255,8 +255,10 @@
     const ct = site.compute || {};
     const pveT = document.getElementById('pveTitle');
     const fnosT = document.getElementById('fnosTitle');
+    const rikuaiT = document.getElementById('rikuaiTitle');
     if (pveT && ct.pve) pveT.textContent = ct.pve;
     if (fnosT && ct.fnos) fnosT.textContent = ct.fnos;
+    if (rikuaiT && ct.rikuai) rikuaiT.textContent = ct.rikuai;
   }
 
   function portXY(node, idx) {
@@ -790,6 +792,7 @@
     renderProbes(snap.probes || []);
     renderPVE(snap.pve);
     renderFnos(snap.fnos);
+    renderRemoteIkuai(snap.rikuai);
     renderIkuai(snap.ikuai, snap.ifaces, snap.wan_check);
     renderStore(snap.pve, snap.local);
     renderEvents(snap.events || []);
@@ -1438,6 +1441,48 @@
     if (nt) {
       nt.innerHTML = esc(fnos.model || '—') + '<br>' + esc(fnos.kernel || '—') +
         '<br>负载 ' + (fnos.load1 || 0).toFixed(2) + ' · ' + esc(fnos.hostname || fnos.host || '');
+    }
+  }
+
+  // 远程爱快（VPN 站点）：经 VPN API 采集的远程路由器状态。
+  // 卡片展示 CPU/内存/在线数/连接数/实时速率，隧道断时显示「离线」。
+  function renderRemoteIkuai(rik) {
+    const badge = $('rikuaiBadge');
+    if (!rik || !rik.ok) {
+      $('rikuaiCpu').textContent = '—';
+      $('rikuaiMem').textContent = '—';
+      $('rikuaiMeta').textContent = rik === null ? '未连接' : '采集失败';
+      if (badge) badge.textContent = '离线';
+      setBar($('rikuaiCpuBar'), 0);
+      setBar($('rikuaiMemBar'), 0);
+      const st = $('rikuaiStats');
+      if (st) st.innerHTML = '<div class="sm-row"><span>—</span></div>';
+      const nt = $('rikuaiNote');
+      if (nt) nt.textContent = '—';
+      return;
+    }
+    if (badge) badge.textContent = '在线';
+    $('rikuaiCpu').textContent = (rik.cpu || 0).toFixed(0) + '%';
+    const memPct = rik.mem_used_pct || 0;
+    $('rikuaiMem').textContent = memPct.toFixed(0) + '%';
+    setBar($('rikuaiCpuBar'), rik.cpu || 0);
+    setBar($('rikuaiMemBar'), memPct);
+    $('rikuaiMeta').textContent = (rik.cores || '?') + ' 核 · ' +
+      (rik.mem_used / 1e9).toFixed(1) + '/' + (rik.mem_total / 1e9).toFixed(0) + 'G · ' +
+      '在线 ' + (rik.online || 0) + ' · 连接 ' + (rik.conn_total || 0) +
+      ' · 运行 ' + fmtDur(rik.uptime || 0);
+    // 实时上下行速率
+    const st = $('rikuaiStats');
+    if (st) {
+      st.innerHTML =
+        '<div class="sm-row"><span>↑ 上行</span><b>' + fmtRateShort(rik.up_bps || 0) + '</b></div>' +
+        '<div class="sm-row"><span>↓ 下行</span><b>' + fmtRateShort(rik.down_bps || 0) + '</b></div>';
+    }
+    const nt = $('rikuaiNote');
+    if (nt) {
+      nt.innerHTML = '有线 ' + (rik.online_wired || 0) + ' · 无线 ' + (rik.online_wireless || 0) +
+        '<br>每核 ' + (rik.cpu_cores || []).map((v) => v.toFixed(0) + '%').join(' ') +
+        '<br>' + esc((rik.host || '').replace(/^https?:\/\//, ''));
     }
   }
 

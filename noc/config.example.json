@@ -26,7 +26,8 @@
     "_compute_note": "算力页两张卡片的标题：可能是站点名（含地名），写在这里不会进代码。缺失时用默认 PVE / 飞牛 NAS",
     "compute": {
       "pve": "PVE",
-      "fnos": "飞牛 NAS"
+      "fnos": "飞牛 NAS",
+      "rikuai": "远程爱快"
     }
   },
   "switch": {

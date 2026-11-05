@@ -94,6 +94,7 @@ VM_NAMES = SITE.get("vm_names") or {}
 _COMPUTE_TITLES = SITE.get("compute") or {}
 PVE_TITLE = _COMPUTE_TITLES.get("pve") or "PVE"
 FNOS_TITLE = _COMPUTE_TITLES.get("fnos") or "飞牛 NAS"
+RIKUAI_TITLE = _COMPUTE_TITLES.get("rikuai") or "远程爱快"
 LAN_CIDR = SITE.get("subnet") or "192.168.1.0/24"
 try:
     LAN_PREFIX = str(ipaddress.ip_network(LAN_CIDR, strict=False).network_address)
@@ -120,6 +121,13 @@ FNOS_HOST = _env("FNOS_HOST", default="")
 FNOS_PORT = int(_env("FNOS_PORT", default="22"))
 FNOS_USER = _env("FNOS_USER", default="")
 FNOS_PASS = _env("FNOS_PASS", default="")
+
+# ---------------------------------------------------------------- 远程爱快（VPN 站点）
+# 经 VPN 可达的远程 iKuai 路由器 API。url 为空时采集器静默跳过。
+# 算力页会多一张卡片，展示远程路由器的 CPU/内存/在线数/连接数/实时速率。
+RIKUAI_URL = _env("RIKUAI_URL", default="").rstrip("/")
+RIKUAI_USER = _env("RIKUAI_USER", default="admin")
+RIKUAI_PASS = _env("RIKUAI_PASS", default="")
 
 # ---------------------------------------------------------------- 交换机
 SWITCH_URL = _env("SWITCH_URL", default="").rstrip("/")
@@ -188,6 +196,7 @@ POLL_FAST = float(_env("POLL_FAST", default="2"))        # 网关流速 + 本机
 POLL_DEVICES = float(_env("POLL_DEVICES", default="5"))  # 终端列表
 POLL_PVE = float(_env("POLL_PVE", default="5"))
 POLL_FNOS = float(_env("POLL_FNOS", default="15"))   # 远程飞牛（经 VPN），不要太频繁
+POLL_RIKUAI = float(_env("POLL_RIKUAI", default="15"))  # 远程爱快（经 VPN）
 POLL_PING = float(_env("POLL_PING", default="10"))
 POLL_SWITCH = float(_env("POLL_SWITCH", default="5"))    # 交换机端口速率（SSH 一次约 1.1s）
 POLL_VPN = float(_env("POLL_VPN", default="15"))         # VPN 隧道状态

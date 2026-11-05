@@ -322,13 +322,15 @@ body {
    它的 CPU / 内存 / 会话数跟 PVE 放一起看，才知道算力到底花在哪。 */
 .view-compute {
   grid-template-columns: 340px 312px minmax(0, 1fr);
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   grid-template-areas: "pve ik vm"
-                       "fnos ik vm";
+                       "fnos ik vm"
+                       "rikuai ik vm";
   gap: 10px;
 }
 .view-compute .p-pve { grid-area: pve; }
 .view-compute .p-fnos { grid-area: fnos; }
+.view-compute .p-rikuai { grid-area: rikuai; }
 .view-compute .p-ikuai { grid-area: ik; }
 .view-compute .p-vmtable { grid-area: vm; }
 
@@ -1084,8 +1086,8 @@ body {
      全部堆成一列的话标尺会被拉成一整行宽，反而难看 */
   .view-compute {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto auto 420px;
-    grid-template-areas: "pve ik" "fnos fnos" "vm vm";
+    grid-template-rows: auto auto auto 420px;
+    grid-template-areas: "pve ik" "fnos fnos" "rikuai rikuai" "vm vm";
   }
   .view-clients .wall { height: 620px; }
   .top { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 12px; }
@@ -1098,8 +1100,8 @@ body {
   /* 手机宽度两台机器并排已经放不下，老老实实竖着堆 */
   .view-compute {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto 380px;
-    grid-template-areas: "pve" "fnos" "ik" "vm";
+    grid-template-rows: auto auto auto auto 380px;
+    grid-template-areas: "pve" "fnos" "rikuai" "ik" "vm";
   }
   .view-clients .wall { height: 520px; }
   .top { padding: 12px 14px; }
@@ -1720,6 +1722,7 @@ text.port-rate {
 /* 算力页 */
 .view-compute .p-pve { min-height: 0; }
 .view-compute .p-fnos { min-height: 0; }
+.view-compute .p-rikuai { min-height: 0; }
 .comp-note {
   margin-top: auto; padding-top: 10px;
   border-top: 1px solid var(--line);
