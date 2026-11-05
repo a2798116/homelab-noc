@@ -286,5 +286,21 @@
       "title": "NAS",
       "sub": "X.30 · 双 2.5G"
     }
-  }
+  },
+  "cameras": [
+    {
+      "id": "cam01",
+      "title": "通道 01",
+      "note": "示例 · H265 需转码",
+      "rtsp": "rtsp://192.168.X.X:8554/cam01",
+      "transcode": true
+    },
+    {
+      "id": "cam02",
+      "title": "通道 02",
+      "note": "示例 · H264 可直接播",
+      "rtsp": "rtsp://192.168.X.X:8554/cam02",
+      "transcode": false
+    }
+  ]
 }

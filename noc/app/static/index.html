@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#070a0f">
-<title>YY&amp;YB Home Lab · NOC</title>
+<title>Home Lab · NOC</title>
 <script>
   // 主题要在首屏渲染前定下来，否则会白/黑闪一下
   (function () {
@@ -35,7 +35,7 @@
       <span class="logo">NOC</span>
       <div class="brand-txt">
         <h1 id="brandName">家庭网络 NOC</h1>
-        <p>全屋网络与算力 · 实时态势</p>
+        <p>全屋网络与算力 · 实时态势<span class="app-ver" id="appVer"></span></p>
       </div>
     </div>
 
@@ -43,7 +43,9 @@
       <button class="tab on" data-view="overview" role="tab" aria-selected="true">总览</button>
       <button class="tab" data-view="network" role="tab" aria-selected="false">网络<span class="tab-n" id="tabNetN"></span></button>
       <button class="tab" data-view="compute" role="tab" aria-selected="false">算力</button>
+      <button class="tab" data-view="backup" role="tab" aria-selected="false">备份</button>
       <button class="tab" data-view="clients" role="tab" aria-selected="false">终端<span class="tab-n" id="tabCliN"></span></button>
+      <button class="tab" data-view="security" role="tab" aria-selected="false">安防<span class="tab-n" id="tabCamN"></span></button>
       <i class="tab-ink" id="tabInk"></i>
     </nav>
 
@@ -270,6 +272,16 @@
           <span class="ptl-peak" id="ptlPeak">—</span>
         </div>
       </div>
+
+      <!-- 虚拟机与容器：PVE 宿主机和它跑的虚机/容器本是一体，合并到同一张卡里 -->
+      <div class="pve-vm-sec">
+        <div class="pve-vm-h"><span>虚拟机与容器</span><i id="vmHint">—</i></div>
+        <div class="vmt-head">
+          <span>ID</span><span>名称</span><span>类型</span><span>CPU</span><span>内存</span><span>磁盘</span><span>实时流量</span><span>运行</span>
+        </div>
+        <div class="vmt-body" id="vmTable"></div>
+      </div>
+
       <div class="comp-note" id="compNote">—</div>
     </section>
 
@@ -382,17 +394,6 @@
       </div>
       <div class="comp-note" id="ikNote">—</div>
     </section>
-
-    <section class="panel p-vmtable">
-      <div class="p-head">
-        <h2>虚拟机与容器</h2>
-        <span class="p-head-r"><span class="hint" id="vmHint">—</span></span>
-      </div>
-      <div class="vmt-head">
-        <span>ID</span><span>名称</span><span>类型</span><span>CPU</span><span>内存</span><span>磁盘</span><span>实时流量</span><span>运行</span>
-      </div>
-      <div class="vmt-body" id="vmTable"></div>
-    </section>
   </div>
 
   <!-- ==================== 终端：全屋设备全屏 ==================== -->
@@ -402,10 +403,44 @@
         <h2>全屋终端</h2>
         <div class="wall-filter" id="wallFilter"></div>
         <input class="wall-q" id="wallQ" placeholder="搜名称 / IP / MAC…" autocomplete="off">
-        <span class="hint">亮 = 在线 · 暗 = 离线 · 点击查看详情</span>
+        <span class="hint">亮 = 在线 · 暗 = 暂时失联（自动探活中）· 点击查看详情</span>
       </div>
       <div class="wall-body" id="wallBody"></div>
     </section>
+  </div>
+
+  <!-- ==================== 备份：远程群晖备份监控（经 NOC 宿主反向代理） ==================== -->
+  <div class="view view-backup" id="view-backup" role="tabpanel" aria-label="备份">
+    <iframe id="backupFrame" src="/bkp/" title="群晖备份监控" loading="lazy"></iframe>
+  </div>
+
+  <!-- ==================== 安防：go2rtc 反代，快照网格 + 点击切实时 ==================== -->
+  <div class="view view-security" id="view-security" role="tabpanel" aria-label="安防">
+    <section class="cam-wall">
+      <div class="cam-head">
+        <h2>安防监控</h2>
+        <span class="cam-src">经 go2rtc 转封装 · Frigate restream</span>
+        <div class="cam-actions">
+          <button class="mini-btn" id="camRefresh" title="立即刷新全部快照">刷新</button>
+          <button class="mini-btn" id="camPause" title="暂停/继续快照轮询">暂停</button>
+        </div>
+        <span class="hint">点击画面切换实时 · 快照每 2 秒更新</span>
+      </div>
+      <div class="cam-grid" id="camGrid"></div>
+      <div class="cam-empty" id="camEmpty" hidden>还没有配置摄像头</div>
+    </section>
+
+    <!-- 单路放大：居中弹窗，限宽并按 16:9 显示；点遮罩或 ESC 也能关 -->
+    <div class="cam-focus" id="camFocus">
+      <div class="cf-panel">
+        <div class="cf-bar">
+          <span class="cf-title" id="camFocusTitle">—</span>
+          <span class="cf-mode" id="camFocusMode">实时</span>
+          <button class="mini-btn" id="camFocusClose">关闭 ×</button>
+        </div>
+        <div class="cf-stage" id="camFocusStage"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 终端统计条：所有页都能看到「一共多少台、掉了几台」，点开才是全屏终端页 -->

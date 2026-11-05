@@ -14,6 +14,20 @@ import ipaddress
 import json
 import os
 
+# ---------------------------------------------------------------- 版本
+# 容器镜像只 COPY app/，仓库根目录的 VERSION 不在镜像里，所以保留兜底常量。
+# 发布时只需改 VERSION 与 CHANGELOG.md，容器重启后 /api/health 会跟着变。
+APP_VERSION = "2.2.0"
+try:
+    _ver_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "VERSION",
+    )
+    with open(_ver_file, "r", encoding="utf-8") as _vf:
+        APP_VERSION = _vf.read().strip() or APP_VERSION
+except OSError:
+    pass
+
 # ---------------------------------------------------------------- 配置文件定位
 
 
@@ -129,6 +143,43 @@ RIKUAI_URL = _env("RIKUAI_URL", default="").rstrip("/")
 RIKUAI_USER = _env("RIKUAI_USER", default="admin")
 RIKUAI_PASS = _env("RIKUAI_PASS", default="")
 
+# ---------------------------------------------------------------- 远程群晖备份监控（VPN 站点）
+# 经 VPN 可达的远程 fnOS 上跑的群晖备份监控页面。url 为空时禁用代理。
+# NOC 加一个「备份」页签，用 iframe + 反向代理把这个页面嵌进来，
+# 用户从 NOC 点进去就能看远程备份状态，不用切 VPN。
+BKP_URL = _env("BKP_URL", default="").rstrip("/")
+
+# ---------------------------------------------------------------- 安防监控
+# go2rtc 就在 NOC 同一台机器上，直接用回环地址反代，不必把它暴露到公网。
+# 浏览器不能播 RTSP，go2rtc 负责 RTSP → fMP4 / JPEG 转封装（H265 还要转 H264）。
+# 这里只配显示用的摄像头清单，RTSP 源写在 config.local.json 的 cameras 段里。
+CAM_URL = _env("CAM_URL", default="http://127.0.0.1:1984").rstrip("/")
+CAM_SNAP_MS = int(_env("CAM_SNAP_MS", default="2000"))   # 快照轮询间隔
+CAMERAS = []
+for _c in (_sec("cameras") or []):
+    if not isinstance(_c, dict):
+        continue
+    _id = str(_c.get("id") or _c.get("src") or "")
+    if _c.get("blank"):
+        # 预留空槽位：网格里留个空格，不注册流也不拉画面，方便以后补摄像头
+        CAMERAS.append({
+            "id": _id, "title": "", "note": "", "rtsp": "",
+            "src": "", "live": "", "transcode": False, "blank": True,
+        })
+        continue
+    if not (_c.get("src") or _c.get("rtsp")):
+        continue
+    CAMERAS.append({
+        "id": _id,
+        "title": _c.get("title") or _id,
+        "note": _c.get("note") or "",
+        "rtsp": _c.get("rtsp") or "",
+        "src": _c.get("src") or _id,           # go2rtc 里用于快照的流名
+        "transcode": bool(_c.get("transcode")),
+    })
+    # 有 RTSP 源的流由 NOC 启动时注册进 go2rtc；H265 另注册一路转 H264 的「实时」流
+    CAMERAS[-1]["live"] = (_id + "_live") if _c.get("rtsp") and _c.get("transcode") else CAMERAS[-1]["src"]
+
 # ---------------------------------------------------------------- 交换机
 SWITCH_URL = _env("SWITCH_URL", default="").rstrip("/")
 SWITCH_USER = _env("SWITCH_USER", default="admin")
@@ -202,11 +253,14 @@ POLL_SWITCH = float(_env("POLL_SWITCH", default="5"))    # 交换机端口速率
 POLL_VPN = float(_env("POLL_VPN", default="15"))         # VPN 隧道状态
 POLL_MIWIFI = float(_env("POLL_MIWIFI", default="10"))   # 小米 AP
 POLL_HA = float(_env("POLL_HA", default="15"))           # Home Assistant
+POLL_LANPING = float(_env("POLL_LANPING", default="15"))  # 全量 ping 终端墙设备
 
 # ---------------------------------------------------------------- 终端上下线判定
 # 网关的"在线"其实是"网关自己看见过"：同网段互访的流量不经过网关，
 # 服务器/交换机这类长期不跟网关说话的设备会被周期性从在线表里踢掉。
-DEV_GRACE = float(_env("DEV_GRACE", default="25"))       # 消失多久才认离线（秒）
+# 所以要靠探活（ICMP / AP 客户端表）兜底，宽限期给够，别让墙上格子乱闪。
+LAN_PING = _env("LAN_PING", default="1") not in ("0", "false", "False", "")
+DEV_GRACE = float(_env("DEV_GRACE", default="45"))       # 消失多久才认离线（秒）
 DEV_REPEAT = float(_env("DEV_REPEAT", default="180"))    # 同一设备上下线事件最小间隔
 
 # ---------------------------------------------------------------- 历史

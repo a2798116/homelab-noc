@@ -318,27 +318,154 @@ body {
 .view-network .p-wifi { grid-area: wifi; }
 .view-network .p-probe { grid-area: probe; }
 
-/* 算力页三栏：PVE 宿主机 | 爱快路由 | 虚拟机明细。路由器也是台机器，
-   它的 CPU / 内存 / 会话数跟 PVE 放一起看，才知道算力到底花在哪。 */
+/* 算力页四栏：PVE（含虚拟机表）| 爱快主路由 | 远程爱快 | 飞牛。
+   每张卡独占一列、通栏全高。PVE 合并了虚拟机表后内容多，需要足量高度，
+   四栏并排正好让 PVE 卡有完整高度容纳宿主指标+趋势+VM 表。
+   两台路由器版式完全对齐；飞牛磁盘列表也需要高度。 */
 .view-compute {
-  grid-template-columns: 340px 312px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas: "pve ik fnos"
-                       "rikuai ik vm";
+  grid-template-columns: minmax(380px, 1fr) minmax(300px, 330px) minmax(300px, 330px) minmax(280px, 340px);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "pve ik rikuai fnos";
   gap: 10px;
 }
 .view-compute .p-pve { grid-area: pve; }
 .view-compute .p-fnos { grid-area: fnos; }
 .view-compute .p-rikuai { grid-area: rikuai; }
 .view-compute .p-ikuai { grid-area: ik; }
-.view-compute .p-vmtable { grid-area: vm; }
 
 .view-clients { grid-template-columns: minmax(0, 1fr); }
+
+/* 备份页：全屏 iframe 嵌入远程群晖备份监控（经 NOC 宿主反向代理） */
+.view-backup {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.view-backup iframe {
+  width: 100%; height: 100%; min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
 
 /* 状态带只在总览出现 */
 .app[data-view="network"] .statusband,
 .app[data-view="compute"] .statusband,
+.app[data-view="backup"] .statusband,
+.app[data-view="security"] .statusband,
 .app[data-view="clients"] .statusband { display: none; }
+
+/* ---------- 安防页：快照网格 + 单路放大 ---------- */
+.view-security {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.cam-wall {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); overflow: hidden;
+}
+.cam-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-bottom: 1px solid var(--line);
+}
+.cam-head h2 { font-size: 13px; font-weight: 600; color: var(--txt-strong); margin: 0; }
+.cam-src { font-size: 10.5px; color: var(--txt-3); }
+.cam-actions { display: flex; gap: 6px; }
+.cam-head .hint { margin-left: auto; }
+.mini-btn.active { border-color: var(--cyan); color: var(--cyan); }
+
+.cam-grid {
+  flex: 1; min-height: 0; padding: 10px;
+  display: grid; gap: 10px;
+  /* 固定 3 列。原来用 auto-fit + minmax(280px,1fr)，宽屏会算出 6 列，
+     唯一一行再被 1fr 撑满高度，每格就变成 299×816 的细长竖条 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+.cam-cell {
+  position: relative; min-height: 0; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: #0d1117;   /* 监控画面本身就是暗的，两个主题都用深色底 */
+}
+.cam-cell:hover { border-color: var(--cyan); }
+/* 预留空槽位：删掉的通道留个淡淡的虚线框，不显示文字、不拉流、不响应点击 */
+.cam-cell.cam-blank {
+  cursor: default;
+  background: rgba(127, 127, 127, .04);
+  border: 1px dashed var(--line);
+}
+.cam-cell.cam-blank:hover { border-color: var(--line); }
+.cam-shot {
+  /* contain 而非 cover：格子比例随窗口变化，别把画面左右裁掉 */
+  width: 100%; height: 100%; display: block;
+  object-fit: contain; background: #0d1117;
+}
+.cam-cell.bad .cam-shot { opacity: 0.16; }
+.cam-top, .cam-bottom {
+  position: absolute; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; color: #fff;
+  font-size: 10.5px; pointer-events: none;
+}
+.cam-top { top: 0; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.cam-bottom {
+  bottom: 0; justify-content: space-between;
+  background: linear-gradient(transparent, rgba(0,0,0,.62));
+}
+.cam-no {
+  font-family: var(--mono); font-size: 10px;
+  background: rgba(255,255,255,.18); border-radius: 4px; padding: 1px 5px;
+}
+.cam-state { margin-left: auto; color: #7ee2a8; }
+.cam-cell.bad .cam-state { color: #ff9b9b; }
+.cam-name { font-weight: 600; font-size: 11.5px; }
+.cam-note { color: rgba(255,255,255,.65); font-size: 10px; }
+.cam-fail {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: #ff9b9b; font-size: 12px; letter-spacing: .1em; pointer-events: none;
+}
+/* 作者样式的 display:grid 会盖掉 UA 的 [hidden]{display:none}，必须显式关掉 */
+.cam-fail[hidden], .cam-cell:not(.bad) .cam-fail { display: none; }
+.cam-empty { padding: 40px; text-align: center; color: var(--txt-3); font-size: 12px; }
+
+/* 放大是个居中弹窗，不是把整页替换掉：限宽 + 固定 16:9 舞台，
+   video/img 用 contain 保持原始比例，绝不被拉成满屏。 */
+.cam-focus {
+  position: absolute; inset: 0; z-index: 20; display: none;
+  align-items: center; justify-content: center;
+  padding: 20px; background: rgba(4, 9, 16, .82);
+}
+.cam-focus.open { display: flex; }
+.cf-panel {
+  width: min(1280px, 100%); max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .5);
+}
+.cf-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  font-size: 12px; color: var(--txt-strong);
+}
+.cf-title { font-weight: 600; }
+.cf-mode { font-size: 10px; color: var(--txt-3); }
+.cf-bar .mini-btn { margin-left: auto; }
+.cf-stage {
+  position: relative;
+  flex: 0 1 auto; min-height: 0;
+  width: 100%; height: min(720px, calc(100vh - 230px));
+  background: #0d1117; overflow: hidden;
+}
+.cf-stage video, .cf-stage img {
+  /* 绝对定位填满舞台：grid/flex 里百分比高度会按视频固有比例解析，
+     实测 2592×1520 会把元素撑到 749px 溢出 720px 的舞台 */
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain; display: block;
+}
 
 
 /* ---------- 顶栏 ---------- */
@@ -364,6 +491,11 @@ body {
 }
 .brand-txt h1 { font-size: 14px; font-weight: 500; letter-spacing: 0.02em; }
 .brand-txt p { font-size: 11px; color: var(--txt-3); margin-top: 2px; }
+/* 版本号跟在副标题后面；颜色继承父级，深浅两套顶栏都能读清 */
+.app-ver {
+  margin-left: 8px; font-family: var(--mono); font-size: 9px;
+  letter-spacing: .04em; color: inherit; opacity: .7;
+}
 
 .top-stats { display: flex; align-items: center; gap: 4px; flex: 1; overflow: hidden; }
 .stat {
@@ -802,8 +934,9 @@ body {
 }
 .wall-cell.off { opacity: 0.32; }
 .wall-cell.off svg { stroke: var(--txt-3); }
-/* iKuai 刚把它从在线表里漏掉、还在宽限期：格子留着别闪，弱化 + 状态点变空心 */
-.wall-cell.stale { opacity: 0.42; }
+/* 暂时失联：iKuai 没报、探活也没通，还在宽限期内。
+   用虚线边框 + 空心状态点说明"不确定"，而不是直接判死——设备可能只是不回 ping */
+.wall-cell.stale { opacity: 0.6; border-style: dashed; }
 .wall-cell.stale.on::after { background: transparent; border: 1px solid var(--c); }
 
 /* ---------- 抽屉（设备详情） ---------- */
@@ -1045,7 +1178,7 @@ body {
 @media (max-width: 1560px) {
   .top-stats .stat { padding: 0 12px; }
   .top { gap: 16px; }
-  .view-compute { grid-template-columns: 320px 296px minmax(0, 1fr); }
+  .view-compute { grid-template-columns: minmax(340px, 1fr) 296px 296px minmax(260px, 300px); }
 }
 /* 状态带十项在这个宽度已放不下，提前换行，别被 overflow:hidden 裁掉 */
 @media (max-width: 1420px) {
@@ -1060,7 +1193,7 @@ body {
 @media (max-width: 1360px) {
   .view-overview { grid-template-columns: 322px minmax(0, 1fr); }
   .view-network { grid-template-columns: minmax(0, 1fr) 344px; }
-  .view-compute { grid-template-columns: 302px 278px minmax(0, 1fr); }
+  .view-compute { grid-template-columns: minmax(300px, 1fr) 278px 278px minmax(240px, 280px); }
   .tab { padding: 5px 9px; font-size: 10.5px; }
   .tab-n { font-size: 9px; }
   .top-stats .stat { padding: 0 9px; }
@@ -1081,14 +1214,21 @@ body {
     grid-template-rows: 400px 340px 320px;
     grid-template-areas: "ports" "wifi" "probe";
   }
-  /* 页面已经改成纵向自然高度，算力页仍保持「上排两台机器 + 下面虚拟机表」，
-     全部堆成一列的话标尺会被拉成一整行宽，反而难看 */
+  /* 四栏放不下：2×2 网格，PVE+飞牛一列，两台路由器一列 */
   .view-compute {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto auto auto 420px;
-    grid-template-areas: "pve ik" "fnos fnos" "rikuai rikuai" "vm vm";
+    grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-areas: "pve ik" "fnos rikuai";
   }
   .view-clients .wall { height: 620px; }
+  /* 窄屏 app 改自然高度，安防墙改为两列并按画面比例算行高，整页可滚 */
+  .view-security { min-height: 620px; }
+  .cam-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+  }
+  .cam-cell { aspect-ratio: 16 / 9; }
+  .cf-stage { height: min(560px, calc(100vh - 230px)); }
   .top { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 12px; }
   .top-stats { flex-wrap: wrap; }
 }
@@ -1096,13 +1236,17 @@ body {
   .app { padding: 8px; gap: 8px; }
   .view-overview { grid-template-rows: auto 340px; }
   .view-network { grid-template-rows: 340px 300px 280px; }
-  /* 手机宽度两台机器并排已经放不下，老老实实竖着堆 */
+  /* 手机宽度全部竖着堆：PVE 含 VM 表所以给足高度 */
   .view-compute {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto 380px;
-    grid-template-areas: "pve" "fnos" "rikuai" "ik" "vm";
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas: "pve" "fnos" "ik" "rikuai";
   }
   .view-clients .wall { height: 520px; }
+  .view-security { min-height: 0; }
+  .cam-grid { grid-template-columns: minmax(0, 1fr); }
+  .cam-focus { padding: 10px; }
+  .cf-stage { height: min(360px, calc(100vh - 230px)); }
   .top { padding: 12px 14px; }
   .stat { padding: 0 10px; }
   .clock { display: none; }
@@ -1728,15 +1872,20 @@ text.port-rate {
   font-size: 10px; color: var(--txt-3);
   font-family: var(--mono); line-height: 1.7;
 }
-.p-vmtable { min-height: 0; }
+/* VM 表已合并进 PVE 卡，不再有独立的 p-vmtable 区块 */
 
-/* ---------- 算力页：爱快主路由 ---------- */
-.p-ikuai { min-height: 0; }
-.view-compute .p-ikuai .gauge-row { gap: 18px; margin-bottom: 12px; }
-.view-compute .p-ikuai .g-k { font-size: 10.5px; }
-.view-compute .p-ikuai .g-v { font-size: 24px; line-height: 1.2; }
-.view-compute .p-ikuai .g-bar { height: 6px; }
-.view-compute .p-ikuai .meta-line {
+/* ---------- 算力页：爱快主路由 + 远程爱快（两卡版式完全对齐） ---------- */
+.p-ikuai, .p-rikuai { min-height: 0; }
+.view-compute .p-ikuai .gauge-row,
+.view-compute .p-rikuai .gauge-row { gap: 18px; margin-bottom: 12px; }
+.view-compute .p-ikuai .g-k,
+.view-compute .p-rikuai .g-k { font-size: 10.5px; }
+.view-compute .p-ikuai .g-v,
+.view-compute .p-rikuai .g-v { font-size: 24px; line-height: 1.2; }
+.view-compute .p-ikuai .g-bar,
+.view-compute .p-rikuai .g-bar { height: 6px; }
+.view-compute .p-ikuai .meta-line,
+.view-compute .p-rikuai .meta-line {
   font-size: 9.5px; line-height: 1.55; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
@@ -1823,15 +1972,16 @@ text.port-rate {
 }
 
 /* 路由卡底部的小趋势：在线终端数，跟着 PVE 那条趋势用同一批采样。
-   这块负责吃掉卡片剩下的高度，两块卡看起来就一样满。 */
+   四栏通栏布局下卡片很高，趋势吃掉剩余高度但封顶避免过度拉长 */
 .ik-trend {
-  flex: 1 1 auto; min-height: 110px;
+  flex: 1 1 auto; min-height: 110px; max-height: 240px;
   margin-top: 14px; padding-top: 12px;
   border-top: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 6px;
 }
-#ikChart { width: 100%; height: 0; min-height: 60px; flex: 1 1 auto; display: block; }
-.view-compute .p-ikuai .comp-note { margin-top: 12px; }
+#ikChart, #rikChart { width: 100%; height: 0; min-height: 60px; flex: 1 1 auto; display: block; }
+.view-compute .p-ikuai .comp-note,
+.view-compute .p-rikuai .comp-note { margin-top: 12px; }
 
 .vmt-head, .vmt-row {
   display: grid;
@@ -2030,21 +2180,37 @@ text.port-rate {
 .view-compute .store-mini .sm-row { font-size: 11px; }
 /* 算力页两张卡都撑满整列高度，底部那行说明钉在卡片下沿，中间空出来的地方留给曲线 */
 .view-compute .comp-note { margin-top: auto; }
-/* 趋势图吃掉 PVE 卡剩下的高度：原来固定 118px，卡撑满屏幕后会空一大块。
-   height:0 + flex-grow：画布高度由布局决定，不会被 canvas 自身属性高度反推着长。 */
-.view-compute .p-pve .pve-trend { flex: 1 1 auto; min-height: 168px; max-height: 380px; }
-.view-compute #pveChart { height: 0; min-height: 100px; flex: 1 1 auto; }
+/* 趋势图：PVE 卡里还要放 VM 表，趋势不再独占剩余高度，固定一截够看就行 */
+.view-compute .p-pve .pve-trend { flex: 0 0 auto; min-height: 120px; max-height: 200px; }
+.view-compute #pveChart { height: 0; min-height: 80px; flex: 1 1 auto; }
 
+/* PVE 卡内的虚拟机表区块：跟趋势图一样有顶部分隔线 */
+.pve-vm-sec {
+  flex: 1 1 auto; min-height: 0;
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column;
+}
+.pve-vm-h {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 10px; color: var(--txt-3); letter-spacing: 0.06em;
+  margin-bottom: 6px; flex-shrink: 0;
+}
+.pve-vm-h i { font-style: normal; font-family: var(--mono); font-size: 9px; }
+.pve-vm-sec .vmt-head { padding: 0 0 5px; }
+.pve-vm-sec .vmt-body { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+
+/* VM 表行高：合并进 PVE 卡后空间紧凑些，行高适度收 */
 .vmt-body { display: flex; flex-direction: column; }
 .vmt-row {
-  flex: 1 1 auto;
-  min-height: 58px;
-  max-height: 104px;
+  flex: 0 0 auto;
+  min-height: 42px;
+  max-height: 68px;
   align-content: center;
 }
-/* 表格撑开时两条信息分上下排，别只在顶部挤一行 */
-.vmt-mem { gap: 5px; }
-.vmt-mem span:first-child { font-size: 10.5px; }
+/* 表格行内存条信息分上下排 */
+.vmt-mem { gap: 3px; }
+.vmt-mem span:first-child { font-size: 10px; }
 
 /* 算力页：CPU / 内存 24 小时趋势 */
 .pve-trend {

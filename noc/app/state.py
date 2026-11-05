@@ -27,6 +27,7 @@ _state = {
     "ha": None,
     "nas": None,
     "probes": [],
+    "lanping": {},
     "devices": [],
     "errors": {},
 }
@@ -228,16 +229,41 @@ def set_error(section, err):
 
 
 def _probe_up(ip):
-    """NOC 自己的 TCP 探测说通，就不采信 iKuai 的离线判定。
+    """NOC 自己的探测说通，就不采信 iKuai 的离线判定。
 
     iKuai 的终端表只统计"经过网关或它 ARP 探测到的"设备。PVE 宿主机、NAS、交换机
     这类同网段互访为主的机器，长期不跟网关说话就会被 iKuai 周期性踢出在线表——
     实测 10.10 在表外时 TCP 8006 一直通，宿主机 uptime 连续没断。
+
+    两路证据：
+      * probes  —— config 里登记的关键设备，TCP 端口探测
+      * lanping —— 终端墙上所有设备的 ICMP 全量探测（lanping.py 并发跑完）
     """
     for p in _state.get("probes") or []:
         if p.get("ip") == ip and p.get("up"):
             return True
-    return False
+    return (_state.get("lanping") or {}).get(ip) is True
+
+
+def _wifi_alive(dev):
+    """AP 的客户端表里还有这台设备 → 它连着 Wi-Fi，肯定在线。
+
+    比 ICMP 更可靠：IoT 设备常年休眠、不响应 ping，但 AP 的关联表里跑不掉。
+    """
+    mac = (dev.get("mac") or "").upper()
+    return bool(mac) and mac in _wifi_map
+
+
+def update_lanping(payload):
+    """整轮 ICMP 探测结果整体替换：某轮没探到的 IP 不应沿用上一轮的结论"""
+    with _lock:
+        _state["lanping"] = dict(payload or {})
+
+
+def device_ips():
+    """当前终端墙上所有设备的 IP（探活目标）"""
+    with _lock:
+        return [d.get("ip") for d in (_state.get("devices") or []) if d.get("ip")]
 
 
 def update_devices(rows):
@@ -283,11 +309,17 @@ def update_devices(rows):
                 _dev_gone.pop(ip, None)
                 continue
 
-            if _probe_up(ip):
-                # 探测可达：只是 iKuai 没看见，继续当在线
+            if _probe_up(ip) or _wifi_alive(old):
+                # 探测可达 / AP 还看着它：只是 iKuai 没看见，继续当在线
                 keep = dict(old)
                 keep["ikuai_seen"] = False
                 keep["stale"] = False
+                keep["last_seen"] = int(now)
+                # 速率是 iKuai 上一拍的残留值，这轮它没报就归零：
+                # 留着会让卡片出现"灰着却还在跑流量"的自相矛盾
+                keep["up"] = 0
+                keep["down"] = 0
+                keep["conn"] = 0
                 out.append(keep)
                 cur[ip] = keep
                 _dev_gone.pop(ip, None)
@@ -295,9 +327,13 @@ def update_devices(rows):
 
             first = _dev_gone.setdefault(ip, now)
             if now - first < config.DEV_GRACE:
-                # 宽限期内先灰着，别让墙上的格子闪
+                # 宽限期内先灰着，别让墙上的格子闪。速率同样清零，
+                # 灰色只表示"暂时没有在线证据"，不该再挂着一串流动的数字
                 keep = dict(old)
                 keep["stale"] = True
+                keep["up"] = 0
+                keep["down"] = 0
+                keep["conn"] = 0
                 out.append(keep)
                 cur[ip] = keep
                 continue
@@ -692,6 +728,8 @@ def full_snapshot():
         s["devices"] = list(s.get("devices") or [])
         s["probes"] = list(s.get("probes") or [])
         errs = dict(s.get("errors") or {})
+        # 全量 ping 结果是内部判据，几十个 IP 的布尔值没必要塞给前端
+        s.pop("lanping", None)
     s["health"] = health()
     s["nas"] = nas_view(s["devices"])
     s["events"] = events(30)

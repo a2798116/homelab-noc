@@ -43,7 +43,7 @@
   /* ---------------- 页签：总览 / 网络 / 算力 / 终端 ----------------
      一屏塞不下所有东西，就按「要不要现在处理」分层：
      总览只回答「现在正常吗」，其余明细各自成页，进来才渲染关注。 */
-  const VIEWS = ['overview', 'network', 'compute', 'clients'];
+  const VIEWS = ['overview', 'network', 'compute', 'backup', 'clients', 'security'];
   let currentView = 'overview';
 
   function setView(v, silent) {
@@ -58,9 +58,12 @@
       b.classList.toggle('on', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    // 终端页本身就是终端墙，底部统计条在那一页是多余的
+    // 终端页本身就是终端墙，底部统计条在那一页是多余的；备份/安防是全屏页，也不需要
     const sb = $('summaryBar');
-    if (sb) sb.style.display = v === 'clients' ? 'none' : '';
+    if (sb) sb.style.display = (v === 'clients' || v === 'backup' || v === 'security') ? 'none' : '';
+    // 摄像头按需拉流：进页面才开始轮询，离开就把所有连接断掉，别让转码空跑
+    if (v === 'security') startCameras();
+    else stopCameras();
     // 曲线 canvas 在隐藏容器里量不到宽度，切回总览补画一次
     if (v === 'overview') drawChart();
     if (v === 'compute') loadPveTrend();
@@ -217,7 +220,8 @@
     if (site.name) {
       const bn = document.getElementById('brandName');
       if (bn) bn.textContent = site.name;
-      document.title = site.name + ' · NOC';
+      // 站点名里已经带 NOC 就别再拼一次，免得标签页出现「xxx NOC · NOC」
+      document.title = /NOC/i.test(site.name) ? site.name : site.name + ' · NOC';
     }
     const labels = site.topology || {};
     for (const [key, lab] of Object.entries(labels)) {
@@ -2193,7 +2197,7 @@
   }
 
   /* ---------------- 终端墙 ---------------- */
-  // 站点网段判断：10.8.8.x 是隧道地址，192.168.10/200.0/24 是站点内网。
+  // 站点网段判断：VPN 隧道地址与站点内网都由本地配置下发，这里只按 CIDR 归属分组。
   // iKuai 对这类跨站终端只给个 IP，名字全是 Unknown，卡片上得自己补。
   function cidrHas(cidr, ip) {
     const p = String(cidr || '').split('/');
@@ -2223,8 +2227,8 @@
   const PPP_LABEL = { ovpn: 'OpenVPN 拨入', pptp: 'PPTP 拨入', l2tp: 'L2TP 拨入', dhcp: 'DHCP' };
 
   function devMeta(d) {
-    if (d.stale) return '刚失去在线信号';
-    if (d.ikuai_seen === false) return 'iKuai 未上报 · 探测可达';
+    if (d.stale) return '暂时失联 · 等待探活';
+    if (d.ikuai_seen === false) return '探活确认在线';
     const bits = [];
     if (d.wifi_ap) bits.push(d.wifi_ap + (d.wifi_band ? ' ' + d.wifi_band : ''));
     else if (d.ppp) bits.push(PPP_LABEL[d.ppp] || d.ppp.toUpperCase());
@@ -2295,10 +2299,10 @@
       if (!list.length) return '';
       const color = CAT_COLOR[cat];
       const cells = list.map((d) => {
-        // stale = iKuai 列表里刚消失，还在宽限期内；ikuai_seen=false = iKuai 没报但探测可达
+        // stale = iKuai 列表里刚消失、探活也没通，还在宽限期内；ikuai_seen=false = iKuai 没报但探活可达
         const cls = d.stale ? ' stale' : (d.ikuai_seen === false ? ' unwatched' : '');
-        const note = d.stale ? ' · 刚失去在线信号'
-          : (d.ikuai_seen === false ? ' · iKuai 未上报，探测可达' : '');
+        const note = d.stale ? ' · 暂时失联，探活未通'
+          : (d.ikuai_seen === false ? ' · iKuai 在线表未列出，探活确认在线' : '');
         const name = devLabel(d);
         const tip = [name, d.ip, d.mac, d.vendor && d.vendor !== 'Unknown' ? d.vendor : '', note]
           .filter(Boolean).join(' · ');
@@ -2362,9 +2366,9 @@
       ['地址分配', d.static ? '静态绑定' : 'DHCP 动态'],
     ];
     if (d.ikuai_seen === false) {
-      items.push(['在线信号', 'iKuai 未上报，但 NOC 探测可达']);
+      items.push(['在线信号', 'iKuai 在线表未列出，NOC 探活确认在线']);
     } else if (d.stale) {
-      items.push(['在线信号', '刚失去，宽限期内']);
+      items.push(['在线信号', 'iKuai 未列出且探活未通，宽限期内']);
     }
     if (d.user) items.push(['账号', d.user]);
     $('drawerBody').innerHTML = `
@@ -2766,13 +2770,15 @@
       $('drawer').classList.remove('open');
       closeVpnModal();
       closeHistory();
+      closeCamFocus();
       return;
     }
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-    // 1-4 直接切页，挂墙时用遥控/键盘翻页比找鼠标快
-    if (e.key >= '1' && e.key <= '4') {
-      setView(VIEWS[parseInt(e.key, 10) - 1]);
+    // 数字键直接切页，挂墙时用遥控/键盘翻页比找鼠标快；范围跟着页签数走
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= VIEWS.length) {
+      setView(VIEWS[n - 1]);
       return;
     }
     if (e.key === 't' || e.key === 'T') {
@@ -2781,6 +2787,163 @@
       // 挂墙大屏用：全屏，去掉浏览器边框
       toggleFullscreen();
     }
+  });
+
+  /* ================= 安防监控 =================
+     浏览器播不了 RTSP，画面全走 /cam/ 反代到本机 go2rtc：
+       网格 = 每 2 秒一张 JPEG 快照（H265 也只需解一帧，CPU 很轻）
+       放大 = fMP4 渐进流（H265 那几路由 go2rtc 转 H264 才播得了）
+     离开页面就把 img / video 的连接全部断掉，绝不让转码在后台空跑。 */
+  const CAM = { list: [], busy: {}, timer: null, tick: 0, loaded: false,
+                paused: false, focus: null, interval: 2000, focusTimer: null };
+
+  async function loadCameras() {
+    if (CAM.loaded) return;
+    try {
+      const r = await fetch('/api/cameras');
+      const d = await r.json();
+      CAM.list = d.cameras || [];
+      CAM.interval = Math.max(600, d.interval || 2000);
+      CAM.loaded = true;
+      const n = $('tabCamN');
+      const live = CAM.list.filter((c) => !c.blank).length;   // 空槽位不计入路数
+      if (n) n.textContent = live ? String(live) : '';
+      buildCamGrid();
+    } catch (e) { /* go2rtc 没起也不拖累其他页 */ }
+  }
+
+  function buildCamGrid() {
+    const grid = $('camGrid'), empty = $('camEmpty');
+    if (!grid) return;
+    if (!CAM.list.length) {
+      grid.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    grid.innerHTML = CAM.list.map((c, i) => c.blank
+      ? `<div class="cam-cell cam-blank" aria-hidden="true"></div>`
+      : `
+      <div class="cam-cell" data-i="${i}">
+        <img class="cam-shot" alt="${esc(c.title)}">
+        <div class="cam-top"><span class="cam-no">${pad(i + 1)}</span><span class="cam-state">连接中</span></div>
+        <div class="cam-bottom"><span class="cam-name">${esc(c.title)}</span><span class="cam-note">${esc(c.note)}</span></div>
+        <div class="cam-fail" hidden>无信号</div>
+      </div>`).join('');
+    grid.querySelectorAll('.cam-cell:not(.cam-blank)').forEach((el) => {
+      el.addEventListener('click', () => openCamFocus(+el.dataset.i));
+    });
+  }
+
+  function refreshCameras(force) {
+    // 放大单路时网格不再拉 6 张快照：省带宽，也让 go2rtc 专心供 fMP4
+    if (CAM.focus != null) return;
+    if (!CAM.list.length || (CAM.paused && !force)) return;
+    CAM.tick++;
+    const cells = document.querySelectorAll('.cam-cell');
+    CAM.list.forEach((c, i) => {
+      const cell = cells[i];
+      if (c.blank || !cell || CAM.busy[i]) return;
+      CAM.busy[i] = true;
+      const shot = cell.querySelector('.cam-shot');
+      const st = cell.querySelector('.cam-state');
+      const fail = cell.querySelector('.cam-fail');
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        CAM.busy[i] = false;
+        cell.classList.toggle('bad', !ok);
+        fail.hidden = ok;
+        st.textContent = ok ? '在线' : '无信号';
+      };
+      const pre = new Image();
+      pre.onload = () => { shot.src = pre.src; done(true); };
+      pre.onerror = () => done(false);
+      // &width=640 让 go2rtc 直接吐缩略帧：420KB → 49KB，六路轮询几乎不吃带宽
+      pre.src = '/cam/api/frame.jpeg?src=' + encodeURIComponent(c.snap)
+        + '&width=640&t=' + CAM.tick;
+      // RTSP 源挂了时 go2rtc 可能一直不返回，别让这一格永久卡在「连接中」
+      setTimeout(() => done(false), 9000);
+    });
+  }
+
+  function openCamFocus(i) {
+    const c = CAM.list[i];
+    if (!c) return;
+    closeCamFocus(false);       // 换一路时别顺手刷新整墙
+    CAM.focus = i;
+    $('camFocusTitle').textContent = c.title;
+    $('camFocusMode').textContent = '实时';
+    const stage = $('camFocusStage');
+    stage.innerHTML = '<video id="camLive" autoplay muted playsinline controls></video>';
+    const v = $('camLive');
+    v.src = '/cam/api/stream.mp4?src=' + encodeURIComponent(c.live);
+    v.play().catch(() => {});
+    v.onerror = () => useCamFallback(c);
+    // 有些环境 fMP4 不报错但一直黑屏，5 秒没起播就退回快照
+    setTimeout(() => { if (CAM.focus === i && v.readyState < 2) useCamFallback(c); }, 5000);
+    $('camFocus').classList.add('open');
+  }
+
+  function useCamFallback(c) {
+    const stage = $('camFocusStage');
+    if (!stage || CAM.focus == null) return;
+    const v = $('camLive');
+    if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+    stage.innerHTML = '<img class="cam-fallback" alt="实时画面">';
+    $('camFocusMode').textContent = '快照模式';
+    const im = stage.querySelector('img');
+    const paint = () => {
+      if (CAM.focus == null) return;
+      im.src = '/cam/api/frame.jpeg?src=' + encodeURIComponent(c.snap)
+        + '&width=1280&f=' + Date.now();
+    };
+    paint();
+    clearInterval(CAM.focusTimer);
+    CAM.focusTimer = setInterval(paint, 1000);
+  }
+
+  function closeCamFocus(refreshGrid) {
+    clearInterval(CAM.focusTimer);
+    CAM.focusTimer = null;
+    const stage = $('camFocusStage');
+    if (stage) {
+      const v = stage.querySelector('video');
+      if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+      stage.querySelectorAll('img').forEach((im) => im.removeAttribute('src'));
+      stage.innerHTML = '';
+    }
+    const box = $('camFocus');
+    if (box) box.classList.remove('open');
+    CAM.focus = null;
+    // 关掉弹窗立刻补一帧，别让网格空着等下一轮轮询
+    if (refreshGrid !== false && currentView === 'security' && !CAM.paused) refreshCameras(true);
+  }
+
+  async function startCameras() {
+    await loadCameras();
+    if (CAM.timer) return;
+    refreshCameras(true);
+    CAM.timer = setInterval(() => refreshCameras(false), CAM.interval);
+  }
+
+  function stopCameras() {
+    if (CAM.timer) { clearInterval(CAM.timer); CAM.timer = null; }
+    closeCamFocus(false);
+    // 快照是短连接，保留最后一帧不会留后台流量；清掉 src 反而让切回来时整墙黑屏
+  }
+
+  $('camRefresh').addEventListener('click', () => refreshCameras(true));
+  $('camPause').addEventListener('click', (e) => {
+    CAM.paused = !CAM.paused;
+    e.currentTarget.textContent = CAM.paused ? '继续' : '暂停';
+    e.currentTarget.classList.toggle('active', CAM.paused);
+    if (!CAM.paused) refreshCameras(true);
+  });
+  $('camFocusClose').addEventListener('click', () => closeCamFocus());
+  $('camFocus').addEventListener('click', (e) => {
+    if (e.target === $('camFocus')) closeCamFocus();   // 点遮罩空白处也能关
   });
 
   /* ---------------- 数据接入 ---------------- */
@@ -2814,6 +2977,11 @@
   }
 
   buildTopo();
+  // 顶栏版本号以 /api/health 为准，HTML 里不再写死第二份
+  fetch('/api/health').then((r) => r.json()).then((d) => {
+    const el = $('appVer');
+    if (el && d.version) el.textContent = 'v' + d.version;
+  }).catch(() => {});
   // 支持 #network / #compute / #clients 直接落地，方便挂墙时固定某一页
   setView((location.hash || '#overview').slice(1), true);
   bootstrapHistory();
