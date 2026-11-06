@@ -17,7 +17,7 @@ import os
 # ---------------------------------------------------------------- 版本
 # 容器镜像只 COPY app/，仓库根目录的 VERSION 不在镜像里，所以保留兜底常量。
 # 发布时只需改 VERSION 与 CHANGELOG.md，容器重启后 /api/health 会跟着变。
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.3.0"
 try:
     _ver_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -223,6 +223,11 @@ HA_OUTDOOR_ENTITY = _sec("ha").get("outdoor_entity") or ""
 HA_OUTDOOR_FALLBACK = _sec("ha").get("outdoor_fallback") or []
 # 灯控面板的 switch 实体前缀（各站点设备不同，只写本地配置；不配就按实体名规则匹配）
 HA_LAMP_SWITCH_PREFIX = [str(x).strip() for x in (_sec("ha").get("lamp_switch_prefix") or []) if str(x).strip()]
+# 空调白名单：只列真正要展示/控制的 climate 实体。
+# HA 里冰箱间室、红外空调伴侣、同一设备被多个集成重复上报的 climate 实体
+# 都会混进 climate 域，靠 device_class 或名字自动猜会把它们当成空调。
+# 结构：[{"entity_id": "climate.x", "name": "书房空调", "area": "书房"}]
+HA_CLIMATE_ENTITIES = [x for x in (_sec("ha").get("climate_entities") or []) if isinstance(x, dict)]
 
 # ---------------------------------------------------------------- NAS 采集端
 # 大二层里手机↔NAS 的流量不经网关，只有 NAS 网卡自己知道。

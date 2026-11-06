@@ -175,6 +175,12 @@
     }
   },
   "ha": {
+    "_readme_climate": "空调页只列这里点名的 climate 实体，顺序即页面顺序。HA 里冰箱的冷藏/冷冻/变温间室、红外空调伴侣（插座）、以及同一台设备被多个集成重复上报的实体都是 climate 域，不要填进来。留空则自动过滤明显不是房间空调的实体。",
+    "climate_entities": [
+      { "entity_id": "climate.YOUR_STUDY_AC_ENTITY", "name": "书房空调", "area": "书房" },
+      { "entity_id": "climate.YOUR_BATH_HEATER_ENTITY", "name": "浴室浴霸", "area": "浴室" },
+      { "entity_id": "climate.YOUR_GREE_AC_ENTITY", "name": "主卧空调", "area": "主卧" }
+    ],
     "outdoor_entity": "weather.forecast_home",
     "outdoor_fallback": [
       {

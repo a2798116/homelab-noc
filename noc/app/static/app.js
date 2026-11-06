@@ -2577,37 +2577,149 @@
       ${presenceListHTML(ha)}`;
   }
 
-  /* ---- 空调 ---- */
+  /* ---- 空调 / 浴霸：状态 + 反向控制 ---- */
   const HVAC_CN = {
     cool: '制冷', heat: '制热', dry: '除湿', fan_only: '送风',
-    auto: '自动', off: '关闭', heat_cool: '冷暖',
+    auto: '自动', off: '关闭', heat_cool: '冷暖', idle: '待机',
+    heating: '加热中', cooling: '制冷中', drying: '除湿中', fan: '送风中',
   };
+  const FAN_CN = {
+    auto: '自动', low: '低速', high: '高速', 'medium low': '中低',
+    medium: '中速', 'medium high': '中高', null: '—',
+    '自动': '自动', '低': '低', '中': '中', '高': '高',
+    '一档': '1 档', '二档': '2 档', '三档': '3 档', '四档': '4 档',
+    '五档': '5 档', '六档': '6 档', '七档': '7 档',
+  };
+  const PRESET_CN = {
+    eco: '节能', away: '离家', boost: '强劲', sleep: '睡眠', none: '关闭',
+    Idle: '待机', Ventilate: '换气', Defog: '除雾', 'Quick Heat': '速热',
+  };
+  const climateBusy = new Set();     // 防止连点，重绘后仍能保留状态
+  const climateLastMode = {};        // 记住关机前的模式，再开机直接回到它
+  let climateMsg = null;
+
+  function cnName(v) {
+    const s = String(v == null ? '' : v);
+    if (HVAC_CN[s]) return HVAC_CN[s];
+    if (FAN_CN[s]) return FAN_CN[s];
+    if (PRESET_CN[s]) return PRESET_CN[s];
+    return /^level\d+$/i.test(s) ? s.slice(5) + ' 档' : s;
+  }
+
+  function acBtn(c, act, val, label, cls, disabled) {
+    const busy = climateBusy.has(c.id + '|' + act);
+    const dis = !c.avail || busy || !!disabled;
+    return `<button class="${cls}" data-climate-id="${esc(c.id)}" data-climate-act="${act}"
+      data-climate-val="${esc(val == null ? '' : val)}"${dis ? ' disabled' : ''}>${label}</button>`;
+  }
+
+  function tempText(v, step) {
+    if (v == null) return '—';
+    return (Number(step) < 1 ? Number(v).toFixed(1) : Math.round(v)) + '°';
+  }
 
   function climateHTML(ha) {
     const list = ha.climates || [];
-    if (!list.length) return '<div class="empty-note">HA 未上报空调实体</div>';
+    if (!list.length) {
+      return '<div class="empty-note">未配置空调实体：在 config.ha.climate_entities 中登记要控制的设备</div>';
+    }
     const rows = list.map((c) => {
-      const off = c.state === 'unavailable';
+      const off = !c.avail;
       const running = !off && !c.off;
+      const modes = c.hvac_modes || [];
+      const presets = (c.preset_modes || []).filter((p) => p && p !== 'none');
+      const fans = c.fan_modes || [];
+      if (!off && c.hvac_mode && c.hvac_mode !== 'off') climateLastMode[c.id] = c.hvac_mode;
+      const boot = climateLastMode[c.id] || modes.find((m) => m === 'auto') || modes[0] || 'auto';
+      const step = Number(c.step) || 1;
+      const lo = c.min == null ? -Infinity : Number(c.min);
+      const hi = c.max == null ? Infinity : Number(c.max);
+      const round = (v) => step < 1 ? Math.round(v * 2) / 2 : Math.round(v);
+      const cur = Number(c.target);
       const sub = off ? '设备离线'
-        : `${HVAC_CN[c.state] || c.state}` +
-          (c.mode && c.mode !== c.state ? ' · ' + (HVAC_CN[c.mode] || c.mode) : '') +
-          (c.cur != null ? ` · 回风 ${c.cur.toFixed(1)}°` : '');
+        : cnName(c.state) +
+          (c.mode && c.mode !== c.state ? ' · ' + cnName(c.mode) : '') +
+          (c.cur != null ? ` · 回风 ${Number(c.cur).toFixed(1)}°` : '');
+
+      const tempCtl = (c.target == null || off) ? '' : `<div class="ac-row">
+          <span class="ac-lb">设定</span>
+          ${acBtn(c, 'set_temperature', Math.max(lo, round(cur - step)), '−', 'ac-step', !running || cur <= lo)}
+          <b class="ac-set">${tempText(cur, step)}</b>
+          ${acBtn(c, 'set_temperature', Math.min(hi, round(cur + step)), '+', 'ac-step', !running || cur >= hi)}
+        </div>`;
+      const modeCtl = modes.length > 1 ? `<div class="ac-row">
+          <span class="ac-lb">模式</span>
+          <div class="ac-chips">${modes.map((m) => acBtn(c, 'set_hvac_mode', m,
+            cnName(m), 'ac-chip' + (!off && c.hvac_mode === m ? ' sel' : ''), off)).join('')}</div>
+        </div>` : '';
+      const presetCtl = presets.length > 1 ? `<div class="ac-row">
+          <span class="ac-lb">功能</span>
+          <div class="ac-chips">${presets.map((p) => acBtn(c, 'set_preset_mode', p,
+            cnName(p), 'ac-chip' + (!off && c.preset_mode === p ? ' sel' : ''), off)).join('')}</div>
+        </div>` : '';
+      const fanCtl = fans.length > 1 ? `<div class="ac-row">
+          <span class="ac-lb">风速</span>
+          <select class="ac-sel" data-climate-id="${esc(c.id)}"
+            data-climate-act="set_fan_mode"${!running ? ' disabled' : ''}>
+            ${fans.map((f) => `<option value="${esc(f)}"${c.fan_mode === f ? ' selected' : ''}>${esc(cnName(f))}</option>`).join('')}
+          </select>
+        </div>` : '';
+      const offHint = (!off && !running && (c.target != null || fans.length > 1))
+        ? '<div class="ac-hint">关机时温度 / 风速锁定，开机后即可调节</div>' : '';
+      const msg = (climateMsg && climateMsg.id === c.id && Date.now() - climateMsg.ts < 6000)
+        ? `<div class="ac-msg${climateMsg.bad ? ' bad' : ''}">${esc(climateMsg.text)}</div>` : '';
+
       return `<div class="ac ${running ? 'on' : ''} ${off ? 'off-dev' : ''}">
-        <svg><use href="#i-ac"></use></svg>
-        <div class="ac-mid">
-          <div class="ac-nm">${esc(c.name)}</div>
-          <div class="ac-sub">${esc(c.area)} · ${esc(sub)}</div>
+        <div class="ac-top">
+          <svg><use href="#i-ac"></use></svg>
+          <div class="ac-mid">
+            <div class="ac-nm">${esc(c.name)}</div>
+            <div class="ac-sub">${esc(c.area)} · ${esc(sub)}</div>
+          </div>
+          <span class="ac-t">${c.target != null && !off ? tempText(cur, step) : '—'}</span>
+          ${acBtn(c, 'set_hvac_mode', running ? 'off' : boot, running ? '关' : '开',
+            'ac-pwr' + (running ? ' on' : ''), off)}
         </div>
-        <span class="ac-t">${c.target != null && !off ? c.target.toFixed(0) + '°' : '—'}</span>
+        <div class="ac-ctl">${tempCtl}${modeCtl}${presetCtl}${fanCtl}${offHint}</div>
+        ${msg}
       </div>`;
     }).join('');
     return `<div class="sheet-sum">
-        <div class="ss-item ${(ha.climates || []).some((c) => !c.off && c.state !== 'unavailable') ? 'ok' : ''}">
-          <b>${(ha.climates || []).filter((c) => !c.off && c.state !== 'unavailable').length}</b><span>台运行中</span></div>
-        <div class="ss-item"><b>${list.length}</b><span>台空调</span></div>
+        <div class="ss-item ${list.some((c) => c.avail && !c.off) ? 'ok' : ''}">
+          <b>${list.filter((c) => c.avail && !c.off).length}</b><span>台运行中</span></div>
+        <div class="ss-item"><b>${list.length}</b><span>台设备</span></div>
       </div>
       <div class="ac-list">${rows}</div>`;
+  }
+
+  async function climateCommand(el) {
+    const id = el.dataset.climateId;
+    const act = el.dataset.climateAct;
+    const value = act === 'set_temperature'
+      ? Number(el.dataset.climateVal)
+      : (el.tagName === 'SELECT' ? el.value : el.dataset.climateVal);
+    const key = id + '|' + act;
+    if (!id || !act || climateBusy.has(key)) return;
+    climateBusy.add(key);
+    climateMsg = null;
+    refreshSheet();
+    try {
+      const res = await fetch('/api/ha/climate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_id: id, action: act, value }),
+      });
+      const j = await res.json().catch(() => ({}));
+      climateMsg = {
+        id, bad: !res.ok || !j.ok, ts: Date.now(),
+        text: res.ok && j.ok ? '已下发，等待设备响应…' : (j.error || ('HTTP ' + res.status)),
+      };
+    } catch (err) {
+      climateMsg = { id, bad: true, ts: Date.now(), text: '请求失败：' + err.message };
+    } finally {
+      climateBusy.delete(key);
+      refreshSheet();
+    }
   }
 
   /* ---- 温湿度 / 空气质量 ---- */
@@ -2690,6 +2802,15 @@
 
   $('healthBox').addEventListener('click', () => openSheet('health'));
   $('sheetClose').addEventListener('click', closeSheet);
+  // 空调控制：委托到面板容器，面板随 SSE 重绘也不会丢事件
+  $('sheetBody').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-climate-act]');
+    if (btn && btn.tagName !== 'SELECT' && !btn.disabled) climateCommand(btn);
+  });
+  $('sheetBody').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-climate-act]');
+    if (sel && !sel.disabled) climateCommand(sel);
+  });
   $('sheet').addEventListener('click', (e) => {
     if (e.target.id === 'sheet') closeSheet();
   });

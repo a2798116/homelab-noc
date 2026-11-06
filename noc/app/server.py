@@ -254,6 +254,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
+        # 空调反向控制：实体与动作都在白名单里，见 collectors/ha.py
+        if u.path == "/api/ha/climate":
+            return self._ha_climate()
         # 反向代理：/bkp/api/control → 远程群晖备份监控的控制接口
         if u.path == "/bkp/api/control":
             return self._proxy_bkp("api/control", u.query, method="POST")
@@ -277,6 +280,35 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             return self._send(400, {"error": "invalid payload"})
         state.update_nas_report(payload)
+        return self._send(200, {"ok": True})
+
+    def _ha_climate(self):
+        """面板下发一次空调控制。校验在 ha.call_climate 里，不接受任意实体/服务。"""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > 8192:
+                return self._send(413, {"ok": False, "error": "payload too large"})
+            payload = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            return self._send(400, {"ok": False, "error": "invalid json"})
+        if not isinstance(payload, dict):
+            return self._send(400, {"ok": False, "error": "invalid payload"})
+        eid = str(payload.get("entity_id") or "")
+        rows = ((state.full_snapshot().get("ha") or {}).get("climates") or [])
+        row = next((r for r in rows if r.get("id") == eid), None)
+        ok, err = ha.call_climate(eid, payload.get("action"), payload.get("value"), row)
+        if not ok:
+            return self._send(400, {"ok": False, "error": err})
+
+        # HA 状态落地有延迟，2 秒后补采一次，别让面板傻等下一轮 15 秒周期
+        def _refresh():
+            try:
+                state.update_ha(ha.collect())
+            except Exception:
+                pass
+        t = threading.Timer(2.0, _refresh)
+        t.daemon = True
+        t.start()
         return self._send(200, {"ok": True})
 
     def _proxy_bkp(self, subpath, query="", method="GET"):

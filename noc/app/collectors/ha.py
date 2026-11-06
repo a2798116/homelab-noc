@@ -40,6 +40,66 @@ _LIGHT_SWITCH_PREFIX = tuple(
 )
 _SWITCH_KEY_RE = re.compile(r"_on_p_\d+_\d+$")
 
+# ---- 空调实体白名单 ----
+# climate 域里不止空调：冰箱的冷藏/冷冻/变温间室、红外空调伴侣（插座），
+# 以及同一台设备被 Xiaomi Home / Xiaomi Miot 两套集成各上报一次，都会混进来。
+# 所以按 config.ha.climate_entities 点名，顺序即页面顺序；未配置时才走兜底过滤。
+_CLIMATE_CFG = []
+for _c in (config.HA_CLIMATE_ENTITIES or []):
+    _eid = str(_c.get("entity_id") or "").strip()
+    if _eid:
+        _CLIMATE_CFG.append({
+            "id": _eid,
+            "name": str(_c.get("name") or "").strip(),
+            "area": str(_c.get("area") or "").strip(),
+        })
+_CLIMATE_MAP = {c["id"]: c for c in _CLIMATE_CFG}
+_CLIMATE_ORDER = {c["id"]: i for i, c in enumerate(_CLIMATE_CFG)}
+_NON_AC_RE = re.compile(r"冰箱|冷藏|冷冻|变温|冰柜|插座|伴侣|热水器|水温", re.I)
+
+
+def _climate_row(s, area_map):
+    """把一条 climate 状态整理成「可展示 + 可控制」的结构"""
+    eid = s.get("entity_id") or ""
+    a = s.get("attributes") or {}
+    st = s.get("state")
+    raw = a.get("friendly_name") or ""
+    cfg = _CLIMATE_MAP.get(eid) or {}
+    modes = [str(m) for m in (a.get("hvac_modes") or []) if m and m != "off"]
+    return {
+        "id": eid,
+        "name": cfg.get("name") or _friendly(s, 18),
+        "area": cfg.get("area") or _zone(eid, raw, area_map),
+        "state": st,
+        "off": st in ("off", "unavailable", "unknown"),
+        "avail": st not in ("unavailable", "unknown"),
+        "cur": _num(a.get("current_temperature")),
+        "target": _num(a.get("temperature")),
+        "mode": a.get("hvac_action") or a.get("hvac_mode") or "",
+        "hvac_mode": a.get("hvac_mode") or st,
+        "hvac_modes": modes,
+        "fan_mode": a.get("fan_mode"),
+        "fan_modes": [str(x) for x in (a.get("fan_modes") or []) if x is not None],
+        "preset_mode": a.get("preset_mode"),
+        "preset_modes": [str(x) for x in (a.get("preset_modes") or []) if x is not None],
+        "min": _num(a.get("min_temp")),
+        "max": _num(a.get("max_temp")),
+        "step": _num(a.get("target_temp_step")) or 1,
+        "features": a.get("supported_features") or 0,
+    }
+
+
+def _climate_missing(cfg):
+    """白名单里的实体这轮没上报：留一张离线卡，别让控制入口凭空消失"""
+    return {
+        "id": cfg["id"], "name": cfg["name"] or cfg["id"], "area": cfg["area"] or "",
+        "state": "unavailable", "off": True, "avail": False,
+        "cur": None, "target": None, "mode": "", "hvac_mode": "off",
+        "hvac_modes": [], "fan_mode": None, "fan_modes": [],
+        "preset_mode": None, "preset_modes": [], "min": None, "max": None,
+        "step": 1, "features": 0,
+    }
+
 # 按键名尾巴，去掉后才是这路灯真正的名字
 _KEY_SUFFIX = ("左键", "中键", "右键", "开关", "按键")
 # 这些词单独留下来没有信息量，说明该用面板名
@@ -583,16 +643,23 @@ def _extract(states, area_map):
         raw = a.get("friendly_name") or ""
 
         if dom == "climate":
-            climates.append({
-                "name": _friendly(s, 18),
-                "area": _zone(eid, raw, area_map),
-                "state": st,
-                "off": st in ("off", "unavailable", "unknown"),
-                "avail": st != "unavailable",
-                "cur": _num(a.get("current_temperature")),
-                "target": _num(a.get("temperature")),
-                "mode": a.get("hvac_action") or a.get("hvac_mode") or "",
-            })
+            if _CLIMATE_MAP:
+                if eid not in _CLIMATE_MAP:
+                    continue
+            else:
+                # 没配白名单时的兜底：排除冰箱间室、红外空调伴侣和自检温度缺失的虚拟实体
+                lo = _num(a.get("min_temp"))
+                if (_NON_AC_RE.search(raw) or (lo is not None and lo < 0)
+                        or a.get("current_temperature") is None):
+                    continue
+            row = _climate_row(s, area_map)
+            # 同一房间的设备被多个集成重复上报时，留能力最全的那条
+            dup = next((c for c in climates if c["area"] == row["area"]), None)
+            if dup:
+                if row["features"] > dup["features"]:
+                    climates[climates.index(dup)] = row
+                continue
+            climates.append(row)
 
         elif dom == "light":
             if eid.endswith(_IGNORE_LIGHT_SUFFIX):
@@ -683,10 +750,17 @@ def _extract(states, area_map):
             g["on"] += 1
     areas = sorted(by_area.values(), key=lambda x: (-x["on"], x["area"]))
 
+    # ---- 空调：按点名顺序输出，白名单里缺的补一张离线卡 ----
+    if _CLIMATE_MAP:
+        have = {c["id"] for c in climates}
+        for c in _CLIMATE_CFG:
+            if c["id"] not in have:
+                climates.append(_climate_missing(c))
+        climates.sort(key=lambda c: _CLIMATE_ORDER.get(c["id"], 999))
     opens = [o for o in openings if o["open"]]
     return {
         "env": env,
-        "climates": climates[:6],
+        "climates": climates[:12],
         "lamps": uniq,
         "lamp_areas": areas,
         "lights_on": sum(1 for l in uniq if l["on"]),
@@ -739,3 +813,77 @@ def collect():
 
 
 _load_tokens()
+
+
+# ---------------- 反向控制 ----------------
+_CLIMATE_SERVICES = {
+    "set_temperature": "set_temperature",
+    "set_hvac_mode": "set_hvac_mode",
+    "set_preset_mode": "set_preset_mode",
+    "set_fan_mode": "set_fan_mode",
+}
+
+
+def call_climate(entity_id, action, value=None, row=None):
+    """把面板上的一次点击翻译成 HA 的 climate 服务调用。
+
+    只接受白名单实体和上面四种服务；模式/预设/风速的取值必须来自设备自己
+    上报的枚举，温度限制在设备上报的范围内 —— 不做成任意服务调用入口。
+    """
+    entity_id = str(entity_id or "")
+    action = str(action or "")
+    row = row or {}
+    if not _CLIMATE_MAP or entity_id not in _CLIMATE_MAP:
+        return False, "实体不在空调白名单内"
+    if not config.HA_URL:
+        return False, "HA_URL 未配置"
+
+    data = {"entity_id": entity_id}
+    if action == "set_temperature":
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return False, "温度不是数字"
+        lo, hi = _num(row.get("min")), _num(row.get("max"))
+        if lo is not None and v < lo:
+            return False, "低于设备最低温度"
+        if hi is not None and v > hi:
+            return False, "高于设备最高温度"
+        data["temperature"] = v
+    elif action in ("set_hvac_mode", "set_preset_mode", "set_fan_mode"):
+        key = {"set_hvac_mode": "hvac_modes",
+               "set_preset_mode": "preset_modes",
+               "set_fan_mode": "fan_modes"}[action]
+        allowed = [str(x) for x in (row.get(key) or [])]
+        if action == "set_hvac_mode" and str(value) == "off":
+            allowed.append("off")
+        if str(value) not in allowed:
+            return False, "取值不在设备支持的列表内"
+        data[key[:-1]] = str(value)
+    else:
+        return False, "不支持的操作"
+
+    # 只有 auto/off 的浴霸，点「制热 / 换气」得先开机再切预设；
+    # 「待机」这类关闭语义、以及有完整模式列表的空调都不自动开机。
+    _off_preset = str(value).strip().lower() in ("待机", "idle", "none", "off", "关闭")
+    if (action == "set_preset_mode" and row.get("off") and not _off_preset
+            and len(row.get("hvac_modes") or []) == 1 and (row.get("hvac_modes") or [])):
+        boot = {"entity_id": entity_id, "hvac_mode": str(row["hvac_modes"][0])}
+    else:
+        boot = None
+    try:
+        token = _token()
+        if boot:
+            st, res = _post_json("/api/services/climate/set_hvac_mode", boot, token, timeout=10)
+            if st not in (200, 201, 202):
+                return False, "开机失败 %s" % st
+        st, res = _post_json("/api/services/climate/" + _CLIMATE_SERVICES[action],
+                             data, token, timeout=10)
+        if st >= 500:
+            # 部分集成在设备关机时拒绝温度/风速设置，会直接抛 500
+            return False, "设备拒绝了设置，请先开机或稍后重试"
+        if st not in (200, 201, 202):
+            return False, "HA 返回 %s %s" % (st, str(res)[:100])
+    except Exception as e:
+        return False, "调用失败 %s" % str(e)[:120]
+    return True, ""

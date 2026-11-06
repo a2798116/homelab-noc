@@ -1126,21 +1126,48 @@ body {
 .pres.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .pres.on .pv { color: var(--ok); }
 
-/* 空调 */
-.ac-list { display: flex; flex-direction: column; gap: 7px; }
+/* 空调 / 浴霸：状态 + 面板内反向控制 */
+.ac-list { display: flex; flex-direction: column; gap: 9px; }
 .ac {
-  display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; border-radius: 10px;
   background: var(--surface-1); border: 1px solid var(--line);
 }
 .ac.on { border-color: var(--accent-line); background: var(--accent-soft); }
-.ac.off-dev { opacity: 0.55; }
+.ac.off-dev { opacity: 0.62; }
+.ac-top { display: flex; align-items: center; gap: 10px; }
 .ac svg { width: 16px; height: 16px; stroke: var(--cyan); fill: none; stroke-width: 1.5; flex-shrink: 0; }
 .ac-mid { flex: 1; min-width: 0; }
 .ac-nm { font-size: 12px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-sub { font-size: 10px; color: var(--txt-3); margin-top: 2px; font-family: var(--mono); }
 .ac-t { font-family: var(--mono); font-size: 15px; color: var(--txt); flex-shrink: 0; }
 .ac.on .ac-t { color: var(--cyan); }
+
+.ac-ctl {
+  margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--line-2);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.ac-row { display: flex; align-items: center; gap: 6px; }
+.ac-lb { font-size: 10px; color: var(--txt-3); width: 26px; flex-shrink: 0; }
+.ac-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.ac-chip, .ac-step, .ac-pwr, .ac-sel {
+  font: inherit; cursor: pointer; border-radius: 6px;
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--txt-2);
+  transition: border-color .15s, background .15s;
+}
+.ac-chip:hover:not(:disabled), .ac-step:hover:not(:disabled), .ac-pwr:hover:not(:disabled) {
+  border-color: var(--accent-line); color: var(--txt);
+}
+.ac-chip.sel { border-color: var(--cyan); background: var(--accent-soft); color: var(--cyan); }
+.ac-chip { font-size: 10.5px; padding: 3px 8px; }
+.ac-step { width: 24px; height: 22px; font-size: 14px; line-height: 1; }
+.ac-set { font-family: var(--mono); font-size: 12px; color: var(--txt); min-width: 44px; text-align: center; }
+.ac-sel { font-size: 10.5px; padding: 3px 6px; max-width: 140px; }
+.ac-pwr { flex-shrink: 0; min-width: 30px; height: 24px; font-size: 11px; }
+.ac-pwr.on { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok); }
+.ac button:disabled, .ac select:disabled { opacity: .4; cursor: not-allowed; }
+.ac-msg { margin-top: 7px; font-size: 10.5px; color: var(--ok); }
+.ac-msg.bad { color: var(--crit); }
+.ac-hint { font-size: 10px; color: var(--txt-3); line-height: 1.5; }
 
 /* 健康问题清单 */
 .issue-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
